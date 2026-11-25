@@ -1,3 +1,4 @@
+import pdfScriptUrl from 'html2pdf.js/dist/html2pdf.bundle.min.js?url';
 import React, { useState } from 'react';
 import { FaPrint, FaTimes, FaFilePdf, FaSpinner, FaDownload } from 'react-icons/fa';
 import { translateFieldKey, formatPatientAge, formatDateDDMMYYYY } from '../../utils/medicalFormatters';
@@ -52,7 +53,7 @@ const DepartmentPrintView = ({
         else {
           await new Promise((resolve, reject) => {
             const script = document.createElement('script');
-            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+            script.src = pdfScriptUrl;
             script.onload = resolve; script.onerror = () => reject(new Error('Load fail'));
             document.head.appendChild(script);
           });

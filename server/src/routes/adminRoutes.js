@@ -70,10 +70,12 @@ router.post('/changelog', auth, requireAdmin, publishChangelog);
 router.delete('/changelog/:id', auth, requireAdmin, deleteChangelog);
 
 // Hospital Data Archive & Explorer
-const { getArchiveTree, getArchiveDayDetails, sendArchiveEmail } = require('../controllers/dataArchiveController');
+const { getArchiveTree, getArchiveDayDetails } = require('../controllers/dataArchiveController');
 router.get('/data-archive/tree', auth, requireAdmin, getArchiveTree);
 router.get('/data-archive/day/:date', auth, requireAdmin, getArchiveDayDetails);
-router.post('/data-archive/send-email', auth, requireAdmin, sendArchiveEmail);
+router.post('/data-archive/send-email', auth, requireAdmin, (req, res) => {
+  res.status(503).json({ success: false, error: 'Bản thử LAN đã tắt gửi email.' });
+});
 const archiveTrash = require('../controllers/archiveTrashController');
 router.get('/data-archive/trash', auth, requireAdmin, archiveTrash.listTrash);
 router.post('/data-archive/trash/preview-delete', auth, requireAdmin, archiveTrash.previewDelete);

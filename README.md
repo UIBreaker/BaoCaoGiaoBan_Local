@@ -1,127 +1,98 @@
-<div align="center">
+# Báo cáo giao ban Bình Long — Bản thử LAN
 
-<img src="client/public/hospital.jpg" alt="Trung Tâm Y Tế Khu Vực Bình Long" width="100%" style="max-height: 420px; object-fit: cover; border-radius: 14px; box-shadow: 0 8px 30px rgba(0,0,0,0.25);" />
+Checkout này được xuất có chọn lọc từ commit `07476dc` của `hospital-report-system` trên nhánh `codex/ux-bugfix`. Điểm gốc của checkout là `b6cd058` trên nhánh `codex/lan-trial`. Chỉ dùng tài khoản và dữ liệu mô phỏng. Bản thử phục vụ React/Vite và API Express cùng địa chỉ LAN. MySQL Community **8.4.13** chạy riêng trên máy đó.
 
-<br/><br/>
+## Chạy trên Windows
 
-<img src="client/public/logo.png" alt="Logo TTYT Bình Long" width="100px" height="100px" style="filter: drop-shadow(0 4px 10px rgba(0,0,0,0.15));" />
+Mở PowerShell trong thư mục gốc của checkout. Dùng Node.js 24 và gói ZIP MySQL Community 8.4 cho Windows. Trong checkout đã bàn giao, MySQL giải nén tại `.lan-trial/mysql-8.4.13-winx64`. Nếu dựng trên máy khác, tải và giải nén gói MySQL Community trước khi ngắt Internet. [MySQL Community Server cho Windows](https://dev.mysql.com/downloads/mysql/8.4.html?os=3)
 
-# 🏥 HỆ THỐNG QUẢN LÝ, TỔNG HỢP & TRÌNH CHIẾU BÁO CÁO GIAO BAN Y TẾ TOÀN VIỆN
-### **TRUNG TÂM Y TẾ KHU VỰC BÌNH LONG — SỞ Y TẾ THÀNH PHỐ ĐỒNG NAI**
+```powershell
+npm ci --ignore-scripts
+npm --prefix client ci --ignore-scripts
+npm run build
 
-<p align="center">
-  <em>Giải pháp chuyển đổi số y tế toàn diện thay thế hoàn toàn báo cáo sổ sách truyền thống, phục vụ công tác giao ban chuyên môn hàng ngày cho 12 Khoa/Phòng & Phòng Kế Hoạch - Nghiệp Vụ.</em>
-</p>
+# Chỉ chạy init một lần với gói MySQL riêng cho bản thử.
+$mysqld = Join-Path $PWD '.lan-trial\mysql-8.4.13-winx64\bin\mysqld.exe'
+node .\lan-trial\run.cjs init $mysqld
 
-[![Version](https://img.shields.io/badge/Version-2.2.2-10B981?style=for-the-badge&logo=semver&logoColor=white)](https://github.com/UIBreaker/Hospital-Report-System)
-[![Author](https://img.shields.io/badge/Author-Nguyen%20Vu%20Nhat%20Nam-0F2C59?style=for-the-badge&logo=github&logoColor=white)](https://github.com/UIBreaker)
-[![Zalo Support](https://img.shields.io/badge/Zalo-0916.337.266-0284C7?style=for-the-badge&logo=zalo&logoColor=white)](https://zalo.me/0916337266)
-[![License](https://img.shields.io/badge/License-MIT-3B82F6?style=for-the-badge)](LICENSE)
-
-<br/>
-
-[![React](https://img.shields.io/badge/React-18.3-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
-[![Vite](https://img.shields.io/badge/Vite-6.x-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Node.js](https://img.shields.io/badge/Node.js-20.x%20%2F%2024.x-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
-[![Express.js](https://img.shields.io/badge/Express.js-5.x-000000?style=flat-square&logo=express&logoColor=white)](https://expressjs.com/)
-[![MySQL](https://img.shields.io/badge/MySQL-8.4%20Serverless-4479A1?style=flat-square&logo=mysql&logoColor=white)](https://www.mysql.com/)
-[![Aiven Cloud](https://img.shields.io/badge/Aiven-Cloud%20Database%20SSL-FF3554?style=flat-square&logo=aiven&logoColor=white)](https://aiven.io/)
-[![Cloudinary](https://img.shields.io/badge/Cloudinary-Medical%20CDN-3448C5?style=flat-square&logo=cloudinary&logoColor=white)](https://cloudinary.com/)
-[![ExcelJS](https://img.shields.io/badge/ExcelJS-4.4.x-107C41?style=flat-square&logo=microsoftexcel&logoColor=white)](https://github.com/exceljs/exceljs)
-[![html2pdf](https://img.shields.io/badge/html2pdf.js-0.10.x-DC2626?style=flat-square&logo=adobeacrobatreader&logoColor=white)](https://ekoopmans.github.io/html2pdf.js/)
-[![Vercel](https://img.shields.io/badge/Vercel-Edge%20Serverless-000000?style=flat-square&logo=vercel&logoColor=white)](https://vercel.com/)
-
-</div>
-
----
-
-
-
-## 1. 🌟 Giới Thiệu & Bối Cảnh Hệ Thống
-
-Tại các bệnh viện và trung tâm y tế, công tác **Giao ban chuyên môn ca trực sáng (07:30 - 08:30)** là hoạt động mang tính sống còn để đánh giá tình hình cấp cứu, tiếp nhận bệnh nhân, theo dõi diễn biến chuyển biến nặng, phẫu thuật khẩn cấp và tử vong trong 24 giờ qua.
-
-**Hệ Thống Quản Lý Báo Cáo Giao Ban Trực Tuyến** được phát triển nhằm giải quyết triệt để các tồn đọng của quy trình thủ công:
-* ❌ **Thực trạng cũ:** Báo cáo bằng sổ viết tay hoặc nhập Excel rời rạc, tốn 45-60 phút tổng hợp, dễ sai sót số liệu, không thể đính kèm ảnh cận lâm sàng (X-quang, CT Scanner, siêu âm), không có cơ chế khóa sổ chống sửa số liệu hồi cứu.
-* ✅ **Giải pháp mới:** 12 Khoa phòng nhập liệu trực tiếp trên biểu mẫu điện tử chuyên khoa; hệ thống tự động tổng hợp số liệu toàn viện theo thời gian thực (Real-time); hỗ trợ chế độ **Trình chiếu hội trường thông minh**, **Xuất file Excel 3 Sheet** chuẩn định dạng Bộ Y Tế và **In/Xuất PDF chuẩn A4** chỉ với 1 cú click.
-
----
-
-## 2. 🛡️ Nền Tảng Công Nghệ (Tech Stack)
-
-### **Frontend Client**
-* **React 18.3 & Vite 6 (Rolldown Engine):** Tối ưu hóa thời gian biên dịch Bundle (<800ms) và Hot Module Replacement (HMR).
-* **Code Splitting & Lazy Loading (`React.lazy` + `Suspense`):** Tách nhỏ mã nguồn trang quản trị thành các chunk độc lập (`ReportsTab`, `StaffTab`, `DatabaseTab`, `AccountsTab`), giảm 65% dung lượng nạp ban đầu.
-* **React Router v6:** Điều hướng Single Page Application (SPA) mượt mà với Route Guards bảo vệ phân quyền Admin/Department.
-* **ExcelJS Client Engine:** Tạo và định dạng trực tiếp file Excel 3 Sheet chuyên nghiệp trên trình duyệt mà không gây tải cho CPU máy chủ.
-* **html2pdf.js & jsPDF Engine:** Bộ xuất bản in A4 y tế chuẩn tỷ lệ phân trang thông minh, chống tràn viền và chống cắt đứt dòng chữ.
-* **React Icons:** Bộ biểu tượng vector thương hiệu sắc nét (`react-icons/fa`, `react-icons/si`).
-
-### **Backend RESTful API**
-* **Node.js 20+ & Express.js 5:** Khung kiến trúc API tách lớp chuẩn mực (Controller - Service - Model - Middleware).
-* **MySQL2 Connection Pool:** Quản lý kết nối cơ sở dữ liệu hiệu năng cao với cấu hình SSL đám mây.
-* **JSON Web Token (JWT) & Bcrypt:** Xác thực phân quyền đa tầng, mã hóa mật khẩu một chiều với salt rounds = 10, hỗ trợ kiểm tra dự phòng CSDL chống lỗi token cũ.
-* **Multer & Cloudinary SDK:** Xử lý nén và tải lên hình ảnh y khoa độ phân giải cao lên Cloud CDN với đường truyền bảo mật HTTPS.
-
-### **Cơ Sở Dữ Liệu & Hạ Tầng Máy Chủ**
-* **MySQL 8.4 Serverless (Aiven Cloud Managed DB / TiDB Cloud):** CSDL quan hệ chuẩn hóa mức 3NF, ràng buộc khóa ngoại `ON DELETE CASCADE`, chỉ mục Index tối ưu tốc độ truy vấn <10ms.
-* **Vercel Serverless Edge & On-Premise VM:** Tương thích cả hạ tầng đám mây không máy chủ và máy chủ vật lý nội bộ bệnh viện.
-
----
-
-## 3. ⚡ Tính Năng Kỹ Thuật Nổi Bật
-
-```mermaid
-graph TD
-    A[Hệ Thống Giao Ban Toàn Viện] --> B[12 Khoa Phòng Chuyên Môn]
-    A --> C[Phòng Kế Hoạch Nghiệp Vụ - Admin]
-    
-    B --> B1[Biểu mẫu động chuyên khoa & Tự động tính toán]
-    B --> B2[Quản lý 4 nhóm ca bệnh & Upload ảnh Cloudinary]
-    B --> B3[In phiếu giao ban khoa phòng chuẩn A4]
-    
-    C --> C1[Ma trận theo dõi 12 khoa & Khóa sổ 08:30]
-    C --> C2[Trình chiếu giao ban hội trường Auto-Scale Font]
-    C --> C3[Xuất Excel 3 Sheet chuẩn BYT & PDF toàn viện]
-    C --> C4[Giám sát CSDL vật lý & Đo lường dung lượng byte theo ngày]
-    C --> C5[Quản lý 185+ nhân sự & Phân quyền tài khoản]
+# Dùng IPv4 của card mạng nối vào LAN cần thử.
+Get-NetIPAddress -AddressFamily IPv4 | Select-Object InterfaceAlias, IPAddress
+npm start -- 192.168.1.9
 ```
 
-### 1. Biểu Mẫu Nhập Liệu Chuyên Khoa Tự Động Hóa
-* Cung cấp 12 biểu mẫu đặc thù cho từng khối (Khoa Khám bệnh, HSCC - Thận nhân tạo, Sản, Nhi, Ngoại TH, CTCH, Mắt, TMH, RHM, YHCT, GMHS, Xét nghiệm, CĐHA).
-* Tự động tính toán số liệu: `Hiện còn = Bệnh cũ + Nhập viện - Xuất viện - Chuyển viện - Chuyển khoa` với cơ chế nhận diện can thiệp thủ công (Manual override).
+Mở [http://192.168.1.9:3017](http://192.168.1.9:3017) trên thiết bị cùng LAN. Đổi `192.168.1.9` theo IPv4 thực tế của máy chạy web. Nếu LAN có VLAN, Wi-Fi cách ly máy khách hoặc Firewall Windows chặn kết nối, IT cần cho phép TCP `3017` từ subnet thử đến máy chủ. MySQL chỉ nghe `127.0.0.1:33317`.
 
-### 2. Quản Lý 4 Nhóm Ca Bệnh Lâm Sàng Kèm Ảnh Y Khoa HD
-* Quản lý chuyên sâu: **Ca Chuyển Viện**, **Ca Phẫu Thuật Mổ**, **Ca Tử Vong**, **Ca Bệnh Nặng Cần Theo Dõi**.
-* Tích hợp upload nhiều hình ảnh chụp X-quang, CT Scanner, siêu âm, vết thương qua Cloudinary CDN kèm bộ xem ảnh phóng to toàn màn hình (Image Lightbox Modal).
+Khi đã cài gói và build, giữ nguyên `.lan-trial` rồi dùng các lệnh dưới đây để xác minh, nạp lại fixture còn thiếu hoặc khởi động lại. `seed` giữ các báo cáo và tài khoản đã có. Dùng cửa sổ PowerShell khác cho `check`, `seed` và `stop` trong khi `start` đang chạy.
 
-### 3. Trình Chiếu Giao Ban Hội Trường (Presentation Engine)
-* **Permanent Canvas Architecture:** Cố định khung slide nền trắng, hiệu ứng chuyển cảnh Zero-Shift Micro-Fade (`140ms`), chống hoàn toàn hiện tượng chớp nháy màn hình máy chiếu.
-* **Auto-Scaling Typography:** Tự động đo độ dài văn bản chuyên môn (`contentLength`) để co giãn cỡ chữ thông minh từ `0.76rem` đến `1.65rem`, đảm bảo toàn bộ hội trường nhìn rõ mọi chi tiết ca bệnh.
+```powershell
+node .\lan-trial\run.cjs check
+node .\lan-trial\run.cjs seed
+node .\lan-trial\run.cjs stop
+npm start -- 192.168.1.9
+```
 
-### 4. Cơ Chế Khóa Sổ Toàn Viện Chống Sửa Số Liệu Hồi Cứu (`is_locked`)
-* Sau mốc **08:30 sáng**, toàn bộ báo cáo tự động chuyển sang trạng thái Khóa Sổ. Khoa phòng chỉ có thể xem, không thể thay đổi dữ liệu đã chốt.
-* Quản trị viên (Admin/Ban Giám Đốc) có đặc quyền tối cao: **Mở khóa từng khoa** hoặc **Mở khóa toàn viện** linh hoạt khi cần bổ sung số liệu.
+## Tài khoản và dữ liệu mô phỏng
 
-### 5. Xuất File Excel 3 Sheet & In Ấn PDF Y Tế Chuẩn A4
-* **ExcelJS Multi-Sheet:** Xuất file `.xlsx` gồm 3 Sheet: `Tổng Hợp Toàn Viện`, `Chi Tiết 12 Khoa Phòng`, `Danh Sách Ca Bệnh` với màu sắc nhận diện, căn lề và kẻ viền chuẩn mực.
-* **In / Tải PDF A4:** Tạo tài liệu A4 hoàn chỉnh có quốc hiệu, tiêu ngữ, chữ ký Bác sĩ - Điều dưỡng trưởng tua trực.
+`init` sinh mật khẩu riêng cho `lan.noi`, `lan.nhi` và `lan.khnv`, rồi lưu trong `.lan-trial/test-accounts.json` cùng ngày dữ liệu mẫu. Xem tệp này tại máy chủ thử để lấy mật khẩu. Ca trực giả của Khoa Nội có trạng thái `draft`, Khoa Nhi có trạng thái `submitted`. Chọn đúng ngày ghi trong tệp để xem ca mẫu. Chọn ngày khác để thử tạo báo cáo mới.
 
-### 6. Giám Sát Dung Lượng CSDL & Đo Lường Byte Dữ Liệu Theo Ngày
-* Bảng điều khiển phân tích chi tiết dung lượng ổ đĩa vật lý Cloud Aiven (Used / Free / Total 1.0 GB).
-* Đo lường chính xác dung lượng văn bản (Text KB) và hình ảnh (Image KB) phát sinh theo từng ngày của 12 khoa.
+Dùng `lan.khnv` để xem trạng thái nộp, thống kê và trình chiếu. Cơ sở dữ liệu, cấu hình, khóa ký và ảnh nén đã lưu vào báo cáo nằm trong `.lan-trial/`, thư mục Git bỏ qua.
 
----
+Tạo tài khoản khoa bổ sung bằng API quản trị có sẵn. Ví dụ dưới đây dùng mã khoa Ngoại tổng hợp `ngoai_th`. Chọn một khoa có biểu mẫu và chưa có tài khoản khoa trong DB thử.
 
-## 👨‍💻 Tác Giả & Hỗ Trợ Kỹ Thuật
+```powershell
+$lan = 'http://192.168.1.9:3017'
+$khnv = (Get-Content .lan-trial/test-accounts.json -Raw | ConvertFrom-Json).accounts |
+  Where-Object username -eq 'lan.khnv'
+$session = Invoke-RestMethod "$lan/api/auth/login" -Method Post -ContentType 'application/json' -Body (
+  @{ username = $khnv.username; password = $khnv.password } | ConvertTo-Json
+)
+$password = Read-Host 'Mật khẩu mới của tài khoản thử' -MaskInput
+Invoke-RestMethod "$lan/api/admin/accounts" -Method Post -ContentType 'application/json' -Headers (
+  @{ Authorization = "Bearer $($session.data.token)" }
+) -Body (@{
+  username = 'lan.ngoai'; password = $password; department_code = 'ngoai_th'
+  department_name = 'Khoa Ngoại tổng hợp (thử)'; role = 'department'
+} | ConvertTo-Json) | Select-Object success
+```
 
-* **Tác giả phát triển:** **Nguyễn Vũ Nhật Nam** (Full-Stack Engineer / UI-UX Architect)
-* **Tổ chức:** Phòng Kế Hoạch - Nghiệp Vụ, **Trung Tâm Y Tế Khu Vực Bình Long**
-* **GitHub Repository:** [https://github.com/UIBreaker/Hospital-Report-System](https://github.com/UIBreaker/Hospital-Report-System)
-* **Kênh hỗ trợ kỹ thuật trực tiếp (Hotline / Zalo):** [**0916.337.266**](https://zalo.me/0916337266)
+## MySQL và kiểm tra đích
 
----
+- `database/schema.sql` tạo ba bảng gốc `users`, `reports`, `transfer_cases`. Trình khởi tạo thay tên schema cố định bằng `hospital_report_lan_trial` trước khi áp dụng. `lan-trial/schema-extension.sql` dùng định nghĩa từ `fix_case_tables.js`, `setup_all_tables.js` và các trường controller yêu cầu. Schema gốc thiếu `reports.nurse_name`, `reports.overtime_staff`, `transfer_cases.images` và DDL cho các bảng ca bệnh còn lại và nhân sự. Giữ phần bổ sung riêng cho lần dựng này.
+- `server/src/config/db.js` bổ sung cột, khóa và các bảng audit/hệ thống/biểu mẫu theo migration trong mã nguồn. Nhánh LAN báo lỗi migration ngoài lỗi cột, index hoặc tên khóa đã tồn tại. Một số bảng changelog và thùng rác được tạo theo yêu cầu bởi controller gốc.
+- `run.cjs` gọi `mysqld.exe --no-defaults` với datadir `.lan-trial/mysql-data` và địa chỉ loopback cố định. Trước khi chạy DDL hoặc bật Express, trình khởi động đối chiếu UUID trong `auto.cnf`, đường dẫn datadir, cổng, bind address và schema. Migration của app, seed và kiểm thử dùng tài khoản chỉ được cấp quyền trong `hospital_report_lan_trial`. Cấu hình lấy từ `.lan-trial/config.json`; có biến DB, JWT hoặc SMTP kế thừa thì dừng trước khi kết nối. Tệp cấu hình và mật khẩu được sinh cục bộ. Bản thử không dùng Aiven production, Vercel, dữ liệu thật hay đồng bộ.
+- `authController.js` đọc tài khoản khoa từ `users` và tài khoản mở rộng từ `system_users`. `reportController.js` ghi `reports` và bảng ca bệnh trong một giao dịch. Ảnh được nén tại trình duyệt và lưu dưới dạng data URL trong JSON của cột `images` (`LONGTEXT`). `adminController.js` cung cấp trạng thái theo ngày và chỉ lấy báo cáo đã nộp cho trình chiếu. `analyticsController.js` tổng hợp số liệu theo kỳ. Tài nguyên giao diện và thư viện xuất PDF được phục vụ cùng web LAN. Gửi email kho lưu trữ bị tắt ở bản này.
 
-<div align="center">
-  <b>&copy; 2026 Trung Tâm Y Tế Khu Vực Bình Long — Sở Y Tế Thành Phố Đồng Nai. All rights reserved.</b>
-</div>
+## Kiểm thử
+
+Playwright dùng Chromium cài sẵn. Nếu thiếu trình duyệt, tải trước khi ngắt Internet bằng `npx playwright install chromium`. Test dùng địa chỉ IPv4 của máy chủ và chặn mọi URL tài nguyên trình duyệt khác ngoài origin LAN. Chọn ngày mô phỏng khác ngày fixture.
+
+```powershell
+npm test -- flow 192.168.1.9 2026-11-23
+node .\lan-trial\run.cjs stop
+# Ở cửa sổ dịch vụ, chạy lại npm start -- 192.168.1.9
+npm test -- persist 192.168.1.9 2026-11-23
+```
+
+Kết quả ngày **25/11/2026** trên máy dựng, địa chỉ Wi-Fi `192.168.1.9:3017`:
+
+| Bài thử | Kết quả |
+| --- | --- |
+| Chromium máy tính và Pixel 7 giả lập | Hai khoa đăng nhập, tạo, mở lại, sửa và nộp phiếu ngày 23/11/2026. Khoa Nội đính kèm ảnh PNG mô phỏng. |
+| KHNV | Lịch báo cáo hiện 2/12 khoa đã nộp. Tab thống kê và trình chiếu mở được. Ca chuyển viện và ảnh xuất hiện trên slide. |
+| Trình duyệt chỉ được truy cập origin LAN | Cả `flow` và `persist` đều ghi nhận 0 yêu cầu ra ngoài. |
+| Tắt và khởi động lại web cùng MySQL | Phiếu Khoa Nội vẫn có cùng ID `5` và ảnh có cùng SHA-256. Slide hiển thị lại ảnh từ DB thử. |
+| Chặn sai cấu hình | `check` dừng khi có `DATABASE_URL` mô phỏng trỏ ngoài. Nạp trực tiếp DB pool cũng dừng nếu chưa qua bước xác minh. |
+
+Ảnh kiểm tra được lưu trong `.lan-trial/presentation-flow.png` và `.lan-trial/presentation-persist.png`. Nhật ký MySQL ở `.lan-trial/mysql.log`. Khi chạy nền, xem thêm `.lan-trial/web.log` và `.lan-trial/web-errors.log`.
+
+### Nghiệm thu còn lại tại Trung tâm
+
+Thử tại Trung tâm bằng laptop và điện thoại thật trên cùng LAN. Đầu tiên mở trang khi WAN còn hoạt động. Ngắt uplink Internet và giữ Wi‑Fi/Ethernet, tắt dữ liệu di động trên điện thoại, mở mới trang để loại cache, rồi đăng nhập khoa → tạo báo cáo ngày thử → thêm ảnh giả ở **Ca chuyển viện** → nộp → mở lại và sửa. Đăng nhập KHNV → chọn đúng ngày → kiểm tra trạng thái **Đã nộp**, thống kê và mở **Trình chiếu giao ban**. Khởi động lại web và MySQL với cùng thư mục `.lan-trial`, sau đó xác minh báo cáo, số liệu và ảnh vẫn mở được. Bước này xác nhận kết nối từ thiết bị thứ hai và WAN thực sự đã ngắt.
+
+## Tệp thay đổi so với điểm gốc `b6cd058`
+
+- `lan-trial/config.cjs`, `run.cjs`, `schema-extension.sql`, `seed.cjs`, `smoke.cjs` — cấu hình, khởi tạo, dữ liệu giả và kiểm thử.
+- `package.json`, `server/server.js`, `server/src/app.js`, `server/src/config/db.js` — lệnh build/chạy/test, xác minh DB và phục vụ web cùng API.
+- `server/src/controllers/{adminController,authController,reportController,userManageController}.js`, `server/src/middleware/auth.js`, `server/src/routes/adminRoutes.js` — báo cáo theo khoa, tài khoản thử, ký JWT, trình chiếu, thống kê DB và tắt email.
+- `client/index.html`, `client/src/{App.jsx,index.css}`, `client/src/services/uploadService.js`, `client/src/pages/ReportPage.jsx`, `client/src/components/common/{DepartmentPrintView,MedicalPrintView}.jsx`, `client/src/components/admin/tabs/DatabaseTab.jsx` — tài nguyên và ảnh nội bộ, hiển thị báo cáo đã lưu và thông tin DB thử.
+- `README.md` — hướng dẫn bàn giao. Quy tắc bỏ qua `.lan-trial/` và theo dõi DDL đã được lưu trong `.gitignore` ngay từ commit gốc của checkout.

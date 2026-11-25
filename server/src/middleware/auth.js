@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'hospital_report_secret_key_2026';
+const JWT_SECRET = process.env.JWT_SECRET;
 
 const auth = (req, res, next) => {
   try {

@@ -1,3 +1,4 @@
+import pdfScriptUrl from 'html2pdf.js/dist/html2pdf.bundle.min.js?url';
 import React, { useState } from 'react';
 import { FaPrint, FaTimes, FaHospital, FaFilePdf, FaSpinner } from 'react-icons/fa';
 import { DEPARTMENT_ORDER, DEPARTMENT_NAMES } from '../../constants/medicalDictionary';
@@ -95,7 +96,7 @@ const MedicalPrintView = ({ date, reports = [], onClose }) => {
         } else {
           await new Promise((resolve, reject) => {
             const script = document.createElement('script');
-            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+            script.src = pdfScriptUrl;
             script.onload = () => resolve();
             script.onerror = () => reject(new Error('Không thể tải thư viện html2pdf'));
             document.head.appendChild(script);

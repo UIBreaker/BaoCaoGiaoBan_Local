@@ -1,3 +1,5 @@
+const { statfsSync } = require('node:fs');
+const { database, data: mysqlDataDir } = require('../../../lan-trial/config.cjs');
 const pool = require('../config/db');
 const bcrypt = require('bcryptjs');
 const { ageDays, todayInVietnam, manualTrashDates, restoredDates, deletedDates } = require('./archiveTrashController');
@@ -34,18 +36,18 @@ const DEPARTMENT_ORDER = [
 ];
 
 const OFFICIAL_DEPARTMENTS = [
-  { code: 'lck', username: 'lck.bvbl', name: 'Khoa Liên Chuyên Khoa' },
-  { code: 'xn', username: 'xn.bvbl', name: 'Khoa Xét nghiệm' },
-  { code: 'cdha', username: 'cdha.bvbl', name: 'Chẩn đoán hình ảnh' },
-  { code: 'hscc_tnt', username: 'hscc.bvbl', name: 'Hồi sức cấp cứu – Thận nhân tạo' },
-  { code: 'noi', username: 'noi.bvbl', name: 'Khoa Nội' },
-  { code: 'nhi', username: 'nhi.bvbl', name: 'Nhi' },
-  { code: 'nhiem', username: 'nhiem.bvbl', name: 'Nhiễm' },
-  { code: 'san', username: 'san.bvbl', name: 'Sản' },
-  { code: 'yhct_phcn', username: 'yhct.bvbl', name: 'Y học cổ truyền – Phục hồi chức năng' },
-  { code: 'ngoai_th', username: 'ngoai.bvbl', name: 'Ngoại tổng hợp' },
-  { code: 'ctch', username: 'ctch.bvbl', name: 'Chấn thương chỉnh hình' },
-  { code: 'gmhs', username: 'gmhs.bvbl', name: 'Gây mê Hồi sức' }
+  { code: 'lck', name: 'Khoa Liên Chuyên Khoa' },
+  { code: 'xn', name: 'Khoa Xét nghiệm' },
+  { code: 'cdha', name: 'Chẩn đoán hình ảnh' },
+  { code: 'hscc_tnt', name: 'Hồi sức cấp cứu – Thận nhân tạo' },
+  { code: 'noi', name: 'Khoa Nội' },
+  { code: 'nhi', name: 'Nhi' },
+  { code: 'nhiem', name: 'Nhiễm' },
+  { code: 'san', name: 'Sản' },
+  { code: 'yhct_phcn', name: 'Y học cổ truyền – Phục hồi chức năng' },
+  { code: 'ngoai_th', name: 'Ngoại tổng hợp' },
+  { code: 'ctch', name: 'Chấn thương chỉnh hình' },
+  { code: 'gmhs', name: 'Gây mê Hồi sức' }
 ];
 
 const getPresentationData = async (req, res, next) => {
@@ -56,7 +58,7 @@ const getPresentationData = async (req, res, next) => {
       `SELECT r.*, u.department_name 
        FROM reports r
        JOIN users u ON r.department_code = u.department_code
-       WHERE r.report_date = ?`,
+       WHERE r.report_date = ? AND r.status = 'submitted'`,
       [date]
     );
 
@@ -303,16 +305,6 @@ const getReportCalendar = async (req, res, next) => {
 
 const getDatabaseStats = async (req, res, next) => {
   try {
-    let dbName = process.env.DB_NAME || 'hospital_report';
-    if (process.env.DATABASE_URL) {
-      try {
-        const url = new URL(process.env.DATABASE_URL);
-        dbName = url.pathname.replace('/', '') || dbName;
-      } catch (e) {
-        // keep fallback dbName
-      }
-    }
-
     // Tự động làm mới thống kê InnoDB để cập nhật dung lượng ảnh và bản ghi mới tức thì
     try {
       await pool.query('ANALYZE TABLE death_cases, transfer_cases, critical_cases, surgery_cases, reports, users, staff_members');
@@ -329,9 +321,8 @@ const getDatabaseStats = async (req, res, next) => {
          ROUND((data_length / 1024), 2) AS dataSizeKb,
          ROUND((index_length / 1024), 2) AS indexSizeKb
        FROM information_schema.TABLES 
-       WHERE table_schema = ? 
-       ORDER BY (data_length + index_length) DESC`,
-      [dbName]
+       WHERE table_schema = DATABASE()
+       ORDER BY (data_length + index_length) DESC`
     );
 
     // Lấy số dòng thực tế chính xác 100% cho từng bảng
@@ -361,40 +352,11 @@ const getDatabaseStats = async (req, res, next) => {
     const hospitalDataSizeMb = enhancedTables.reduce((acc, t) => acc + (parseFloat(t.sizeMb) || 0), 0);
     const totalRows = enhancedTables.reduce((acc, t) => acc + (parseInt(t.rowsCount, 10) || 0), 0);
 
-    // 2. Tính toán dung lượng vật lý thực tế trên ổ đĩa máy chủ Aiven (Physical Storage)
-    let physicalAllocatedMb = 76.16; // Mặc định dung lượng tablespace cấp phát cơ sở
-    let systemTablesMb = 7.86;
-
-    try {
-      const [spaceRes] = await pool.query(
-        'SELECT ROUND(SUM(allocated_size)/1024/1024, 2) AS total_allocated_mb FROM information_schema.INNODB_TABLESPACES'
-      );
-      if (spaceRes && spaceRes[0] && spaceRes[0].total_allocated_mb) {
-        physicalAllocatedMb = parseFloat(spaceRes[0].total_allocated_mb) || physicalAllocatedMb;
-      }
-    } catch (e) {}
-
-    try {
-      const [schemaRes] = await pool.query(
-        "SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 3) AS sys_size_mb FROM information_schema.TABLES WHERE table_schema IN ('mysql', 'sys', 'performance_schema')"
-      );
-      if (schemaRes && schemaRes[0] && schemaRes[0].sys_size_mb) {
-        systemTablesMb = parseFloat(schemaRes[0].sys_size_mb) || systemTablesMb;
-      }
-    } catch (e) {}
-
-    // Trên máy chủ Aiven MySQL Cloud (Gói Tiêu Chuẩn 1024 MB = 1.0 GB):
-    // Dung lượng ổ đĩa vật lý bao gồm:
-    // - User Data & Index Tablespaces (hospital_report)
-    // - System Tablespaces & Schema (mysql, sys)
-    // - Undo Logs (innodb_undo_001, innodb_undo_002 ~32MB)
-    // - Redo Log Files & Temporary Tablespace (~76MB)
-    // - Binary Logs, Error Logs & Runtime Base Footprint của Node Aiven (~220MB)
-    const baseAivenFootprintMb = 220.0;
-    const physicalUsedMb = parseFloat((baseAivenFootprintMb + physicalAllocatedMb + hospitalDataSizeMb).toFixed(1));
-    const maxLimitMb = 1024.0; // 1024 MB (1.0 GB Gói Aiven)
-    const freeSpaceMb = parseFloat(Math.max(0, maxLimitMb - physicalUsedMb).toFixed(1));
-    const usagePercentage = parseFloat(((physicalUsedMb / maxLimitMb) * 100).toFixed(1));
+    const { bsize, blocks, bavail } = statfsSync(mysqlDataDir);
+    const maxLimitMb = Math.round(blocks * bsize / 1024 ** 2);
+    const freeSpaceMb = Math.round(bavail * bsize / 1024 ** 2);
+    const physicalUsedMb = maxLimitMb - freeSpaceMb;
+    const usagePercentage = Number((physicalUsedMb / maxLimitMb * 100).toFixed(1));
 
     // Đánh giá mức độ an toàn theo tiêu chuẩn:
     // < 70%: An toàn (Xanh lá), 70% - 85%: Cảnh báo (Cam/Vàng), > 85%: Nguy hiểm (Đỏ)
@@ -413,21 +375,14 @@ const getDatabaseStats = async (req, res, next) => {
     res.json({
       success: true,
       data: {
-        databaseName: dbName,
-        // Thông số ổ đĩa vật lý máy chủ Aiven (Physical Storage)
+        databaseName: database,
         physicalStorage: {
           usedMb: physicalUsedMb,
           totalMb: maxLimitMb,
           freeMb: freeSpaceMb,
           usagePercentage,
           statusLevel,
-          statusText,
-          breakdown: {
-            hospitalDataMb: parseFloat(hospitalDataSizeMb.toFixed(3)),
-            tablespacesMb: physicalAllocatedMb,
-            systemTablesMb: systemTablesMb,
-            baseRuntimeMb: baseAivenFootprintMb
-          }
+          statusText
         },
         totalDataSizeMb: parseFloat(hospitalDataSizeMb.toFixed(3)),
         totalRows,
@@ -736,42 +691,12 @@ const exportReports = async (req, res, next) => {
   }
 };
 
-const DEFAULT_HASH_123 = '$2b$10$P6qiqatgseZ31AOk6DdQe.iosBVo0IL6yiQEvnJtdPxA/pOczEjWa'; // 123
-
 const getAllAccounts = async (req, res, next) => {
   try {
-    // 1. Fetch current users
-    let [users] = await pool.execute(
+    const [users] = await pool.execute(
       'SELECT id, username, department_code, department_name, role FROM users'
     );
 
-    // 2. Ensure all 12 official department accounts exist in DB
-    const existingDeptCodes = new Set(users.map(u => u.department_code));
-    const existingUsernames = new Set(users.map(u => u.username?.toLowerCase()));
-
-    for (const dept of OFFICIAL_DEPARTMENTS) {
-      if (!existingDeptCodes.has(dept.code)) {
-        try {
-          const username = existingUsernames.has(dept.username.toLowerCase()) 
-            ? `${dept.code}.bvbl` 
-            : dept.username;
-
-          await pool.execute(
-            'INSERT INTO users (username, password_hash, department_code, department_name, role) VALUES (?, ?, ?, ?, ?)',
-            [username, DEFAULT_HASH_123, dept.code, dept.name, 'department']
-          );
-        } catch (seedErr) {
-          console.warn(`Seed notice for ${dept.code}:`, seedErr.message);
-        }
-      }
-    }
-
-    // Re-fetch clean list after auto-seed
-    [users] = await pool.execute(
-      'SELECT id, username, department_code, department_name, role FROM users'
-    );
-
-    // 3. Sort according to official 12-department sequence, admin first
     users.sort((a, b) => {
       if (a.role === 'admin' && b.role !== 'admin') return -1;
       if (b.role === 'admin' && a.role !== 'admin') return 1;
@@ -806,28 +731,6 @@ const updateAccountPassword = async (req, res, next) => {
     res.json({
       success: true,
       message: `Đã cập nhật mật khẩu thành công cho tài khoản "${existing[0].username}" (${existing[0].department_name})!`
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-const resetAccountPassword = async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const defaultPassword = req.body.defaultPassword || '123';
-
-    const [existing] = await pool.execute('SELECT * FROM users WHERE id = ?', [id]);
-    if (existing.length === 0) {
-      return res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản người dùng' });
-    }
-
-    const password_hash = await bcrypt.hash(String(defaultPassword).trim(), 10);
-    await pool.execute('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash, id]);
-
-    res.json({
-      success: true,
-      message: `Đã đặt lại mật khẩu về "${defaultPassword}" cho tài khoản "${existing[0].username}"!`
     });
   } catch (error) {
     next(error);
@@ -1203,7 +1106,6 @@ module.exports = {
   exportReports,
   getAllAccounts,
   updateAccountPassword,
-  resetAccountPassword,
   updateAccountDetails,
   createAccount,
   toggleReportLock,

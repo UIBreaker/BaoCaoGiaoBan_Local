@@ -217,7 +217,7 @@ const changePassword = async (req, res, next) => {
           departmentCode: user.department_code,
           role: user.role
         },
-        process.env.JWT_SECRET || 'hospital_report_secret_key_2026',
+        process.env.JWT_SECRET,
         { expiresIn: '30d' }
       );
 

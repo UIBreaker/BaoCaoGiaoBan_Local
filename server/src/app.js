@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('node:path');
 const authRoutes = require('./routes/authRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const adminRoutes = require('./routes/adminRoutes');
@@ -27,19 +28,9 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Welcome & Status endpoints
-app.get('/', (req, res) => {
-  res.json({
-    name: 'Hospital Report System API - BVĐK KV Bình Long',
-    status: 'online',
-    frontendUrl: 'http://localhost:5173',
-    endpoints: {
-      auth: '/api/auth/login',
-      reports: '/api/reports',
-      admin: '/api/admin/dashboard',
-      staff: '/api/staff'
-    }
-  });
+app.use((req, res, next) => {
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; media-src 'self' data: blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'");
+  next();
 });
 
 app.get('/api', (req, res) => {
@@ -62,6 +53,11 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/custom-forms', customFormRoutes);
 app.get('/api/staff-by-department', auth, getStaffByDepartment);
+
+app.use('/api', (req, res) => res.status(404).json({ success: false, error: 'API route not found.' }));
+const frontend = path.resolve(__dirname, '../../client/dist');
+app.use(express.static(frontend));
+app.get('/{*route}', (req, res) => res.sendFile(path.join(frontend, 'index.html')));
 
 // Error Handler
 app.use(errorHandler);

@@ -1002,7 +1002,7 @@ const ReportPage = () => {
                   <span>Đã nạp dữ liệu báo cáo ngày {formatDateDDMMYYYY(headerData.reportDate)}</span>
                 </div>
                 <p style={{ margin: 0, color: '#15803D', fontSize: '0.86rem', lineHeight: '1.5' }}>
-                  Toàn bộ thông tin ca trực và số liệu chuyên môn đã nộp trước đó đã được tải sẵn. Bạn có thể tiếp tục chỉnh sửa hoặc bấm <strong>"Tiếp tục nhập số liệu chuyên môn"</strong> để xem lại.
+                  Thông tin ca trực và số liệu đã lưu được tải sẵn. Bấm <strong>"Tiếp tục nhập số liệu chuyên môn"</strong> để xem hoặc chỉnh sửa.
                 </p>
                 <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: '0.25rem' }}>
                   <button

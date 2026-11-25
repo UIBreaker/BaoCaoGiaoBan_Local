@@ -5,7 +5,6 @@ import ProtectedRoute from './components/common/ProtectedRoute';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import MedicalLoader from './components/common/MedicalLoader';
 import ScrollToTopButton from './components/common/ScrollToTopButton';
-import { Analytics } from '@vercel/analytics/react';
 
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const ReportPage = lazy(() => import('./pages/ReportPage'));
@@ -126,7 +125,6 @@ function App() {
           {/* Global Floating Scroll To Top Button across all pages */}
           <ScrollToTopButton />
         </Router>
-        <Analytics />
       </AuthProvider>
     </ErrorBoundary>
   );

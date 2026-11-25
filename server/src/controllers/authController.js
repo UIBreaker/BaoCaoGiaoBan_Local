@@ -2,8 +2,6 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../config/db');
 
-const KHNV_NEW_HASH = '$2b$10$mRZNcXHD3MUb0dJ0HTLfrOQnxZO2zvGbky1aCzGn/Tmw4LuBxAjSi'; // Khnv@2026
-
 const login = async (req, res, next) => {
   try {
     const { username, password } = req.body;
@@ -26,37 +24,11 @@ const login = async (req, res, next) => {
       [users] = await pool.execute("SELECT * FROM users WHERE role = 'admin' OR username IN ('admin', 'khnv', 'Khnv')");
     }
 
-    // Auto-create lck.bvbl if not exists in DB yet
-    if (users.length === 0 && cleanUsername.toLowerCase() === 'lck.bvbl') {
-      try {
-        const DEFAULT_PASS_HASH = '$2b$10$P6qiqatgseZ31AOk6DdQe.iosBVo0IL6yiQEvnJtdPxA/pOczEjWa'; // 123
-        await pool.execute(
-          "INSERT INTO users (username, password_hash, department_code, department_name, role) VALUES ('lck.bvbl', ?, 'lck', 'Khoa Liên Chuyên Khoa', 'department')",
-          [DEFAULT_PASS_HASH]
-        );
-        [users] = await pool.execute("SELECT * FROM users WHERE username = 'lck.bvbl'");
-      } catch (insertErr) {
-        console.warn('Auto-create lck.bvbl note:', insertErr.message);
-      }
-    }
-
     // If found in Core Users table
     if (users.length > 0) {
       const user = users[0];
-      let isMatch = await bcrypt.compare(password, user.password_hash);
-      
-      if (!isMatch && isKhnvAdminAttempt) {
-        if (password === 'Khnv@2026' || password === '123') {
-          isMatch = true;
-          try {
-            await pool.execute(
-              "UPDATE users SET username = 'Khnv', password_hash = ?, department_name = 'Phòng Kế Hoạch Nghiệp Vụ' WHERE id = ? OR role = 'admin'",
-              [KHNV_NEW_HASH, user.id]
-            );
-          } catch (dbUpdateErr) {}
-        }
-      }
-      
+      const isMatch = await bcrypt.compare(password, user.password_hash);
+
       if (!isMatch) {
         return res.status(401).json({ success: false, error: 'Tên đăng nhập hoặc mật khẩu không chính xác' });
       }
@@ -71,7 +43,7 @@ const login = async (req, res, next) => {
           role: userRole,
           source: 'core'
         },
-        process.env.JWT_SECRET || 'hospital_report_secret_key_2026',
+        process.env.JWT_SECRET,
         { expiresIn: '30d' }
       );
 
@@ -165,7 +137,7 @@ const login = async (req, res, next) => {
           role: userRole,
           source: 'system'
         },
-        process.env.JWT_SECRET || 'hospital_report_secret_key_2026',
+        process.env.JWT_SECRET,
         { expiresIn: '30d' }
       );
 

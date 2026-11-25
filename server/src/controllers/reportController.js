@@ -36,6 +36,9 @@ const isReportLocked = (report) => {
 };
 
 const createOrUpdateReport = async (req, res, next) => {
+  if (req.user.role !== 'admin' && req.body.departmentCode !== req.user.departmentCode) {
+    return res.status(403).json({ success: false, error: 'Không thể lưu báo cáo của khoa khác.' });
+  }
   const connection = await pool.getConnection();
   try {
     if (pool.ensureSchema) {

@@ -112,7 +112,7 @@ const DatabaseTab = ({ date }) => {
               Trạng Thái & Dung Lượng Cơ Sở Dữ Liệu
             </h3>
             <p style={{ fontSize: '0.78rem', color: '#64748B', margin: '0.15rem 0 0 0' }}>
-              Giám sát dung lượng CSDL Aiven MySQL 8.4 SSL và lưu lượng báo cáo phát sinh.
+              Giám sát dung lượng CSDL MySQL thử trên LAN và lưu lượng báo cáo phát sinh.
             </p>
           </div>
         </div>
@@ -220,7 +220,7 @@ const DatabaseTab = ({ date }) => {
                 DUNG LƯỢNG SỬ DỤNG
               </div>
               <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '0.1rem' }}>
-                Giới hạn: <strong>{dbStats.physicalStorage?.totalMb || 1024} MB</strong> ({dbStats.physicalStorage?.usagePercentage || 0}%)
+                Giới hạn: <strong>{dbStats.physicalStorage?.totalMb} MB</strong> ({dbStats.physicalStorage?.usagePercentage || 0}%)
               </div>
             </div>
           </div>
@@ -319,7 +319,7 @@ const DatabaseTab = ({ date }) => {
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontWeight: '800', fontSize: '0.88rem', color: '#0F2C59' }}>
-              <FaServer style={{ color: '#2563EB' }} /> Dung Lượng Ổ Đĩa Vật Lý Máy Chủ Cloud Aiven (Gói 1.0 GB)
+              <FaServer style={{ color: '#2563EB' }} /> Dung lượng ổ đĩa chứa MySQL thử
             </div>
             <span style={{
               padding: '0.15rem 0.6rem',
@@ -348,7 +348,7 @@ const DatabaseTab = ({ date }) => {
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#64748B', flexWrap: 'wrap', gap: '0.5rem' }}>
             <span>Đã dùng: <strong style={{ color: '#0F2C59' }}>{dbStats.physicalStorage.usedMb} MB</strong> ({dbStats.physicalStorage.usagePercentage}%)</span>
             <span>Còn trống: <strong style={{ color: '#10B981' }}>{dbStats.physicalStorage.freeMb} MB</strong></span>
-            <span>Tổng cấp phát: <strong style={{ color: '#0F2C59' }}>{dbStats.physicalStorage.totalMb} MB (1.0 GB)</strong></span>
+            <span>Tổng cấp phát: <strong style={{ color: '#0F2C59' }}>{dbStats.physicalStorage.totalMb} MB</strong></span>
           </div>
         </div>
       )}

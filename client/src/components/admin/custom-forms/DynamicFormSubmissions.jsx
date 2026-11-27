@@ -1,0 +1,1846 @@
+import React, { useState, useEffect, useMemo, useContext } from 'react';
+import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import { 
+  FaClipboardList, 
+  FaCalendarAlt, 
+  FaArrowLeft, 
+  FaFileExcel, 
+  FaPrint, 
+  FaTimes, 
+  FaEye, 
+  FaHospital, 
+  FaUser, 
+  FaClock, 
+  FaCheckCircle, 
+  FaSync, 
+  FaSearch, 
+  FaThLarge, 
+  FaTable, 
+  FaList, 
+  FaDownload, 
+  FaChevronDown, 
+  FaChevronUp, 
+  FaUsers, 
+  FaFileAlt, 
+  FaFilter, 
+  FaChartBar, 
+  FaLayerGroup, 
+  FaUserMd, 
+  FaMapMarkerAlt, 
+  FaHeartbeat, 
+  FaStethoscope, 
+  FaNotesMedical, 
+  FaFilePdf, 
+  FaRegFileAlt, 
+  FaCheck, 
+  FaSignature, 
+  FaTrash,
+  FaEdit,
+  FaLock
+} from 'react-icons/fa';
+import customFormService from '../../../services/customFormService';
+import { AuthContext } from '../../../contexts/AuthContext';
+import MedicalLoader from '../../common/MedicalLoader';
+import EmbeddedTrackerField from './EmbeddedTrackerField';
+import DynamicFormRenderer from './DynamicFormRenderer';
+
+const DynamicFormSubmissions = ({ formCode: propFormCode, onBack, readOnly = false }) => {
+  const { code: paramCode } = useParams();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { user } = useContext(AuthContext) || {};
+
+  const formCode = propFormCode || paramCode;
+  const isReadOnly = readOnly || searchParams.get('mode') === 'view' || searchParams.get('readOnly') === 'true' || window.location.pathname.endsWith('/view');
+
+  const [submissions, setSubmissions] = useState([]);
+  const [formMeta, setFormMeta] = useState(null);
+  const [selectedDate, setSelectedDate] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDept, setSelectedDept] = useState('all');
+  const [loading, setLoading] = useState(true);
+  const [selectedSubmission, setSelectedSubmission] = useState(null);
+  const [editingSubmission, setEditingSubmission] = useState(null);
+  const [showLegacyColumns, setShowLegacyColumns] = useState(false);
+  
+  // viewMode: 'visual' (Xem Trực Quan chuyên sâu) | 'grid' (Bảng ma trận cột) | 'dossier' (Phiếu in báo cáo) | 'compact' (Bảng thu gọn)
+  const [viewMode, setViewMode] = useState('visual');
+
+  const fetchSubmissions = async () => {
+    setLoading(true);
+    try {
+      const res = await customFormService.getFormSubmissions(formCode, selectedDate ? { date: selectedDate } : {});
+      if (res && res.success) {
+        setSubmissions(res.data || []);
+        setFormMeta(res.form);
+      }
+    } catch (err) {
+      console.error('Error fetching submissions:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (formCode) fetchSubmissions();
+  }, [formCode, selectedDate]);
+
+  // Kiểm tra quyền SỬA bản ghi (Chỉ người có quyền sửa / Admin / Người nộp mới được sửa)
+  const canEditSubmission = (sub) => {
+    if (isReadOnly) return false;
+    if (!user) return false;
+    if (user.role === 'admin') return true;
+    if (sub && sub.submitted_by_user === user.username) return true;
+
+    const perms = formMeta?.permissions || [];
+    if (perms.length === 0) return true;
+
+    return perms.some(p => {
+      if (p.permission !== 'edit') return false;
+      if (p.target_type === 'all') return true;
+      if (p.target_type === 'user' && (p.target_value === user.username || p.target_value === user.departmentCode)) return true;
+      if (p.target_type === 'dept' && p.target_value === user.departmentCode) return true;
+      return false;
+    });
+  };
+
+  // Kiểm tra quyền XÓA bản ghi
+  const canDeleteSubmission = (sub) => {
+    if (isReadOnly) return false;
+    if (!user) return false;
+    if (user.role === 'admin') return true;
+    if (sub && sub.submitted_by_user === user.username) return true;
+
+    const perms = formMeta?.permissions || [];
+    if (perms.length === 0) return true;
+
+    return perms.some(p => {
+      if (p.permission !== 'edit') return false;
+      if (p.target_type === 'all') return true;
+      if (p.target_type === 'user' && (p.target_value === user.username || p.target_value === user.departmentCode)) return true;
+      if (p.target_type === 'dept' && p.target_value === user.departmentCode) return true;
+      return false;
+    });
+  };
+
+  // Xóa bản ghi
+  const handleDeleteSubmission = async (subId, e) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm('Bạn có chắc chắn muốn xóa bản ghi báo cáo này không?\n\nLưu ý: Dữ liệu sau khi xóa sẽ không thể phục hồi.')) {
+      return;
+    }
+    try {
+      const res = await customFormService.deleteFormSubmission(formCode, subId);
+      if (res && res.success) {
+        setSubmissions(prev => prev.filter(s => s.id !== subId));
+        if (selectedSubmission?.id === subId) {
+          setSelectedSubmission(null);
+        }
+      } else {
+        alert(res?.error || 'Không thể xóa bản ghi.');
+      }
+    } catch (err) {
+      console.error('Delete submission failed:', err);
+      alert(err.response?.data?.error || 'Có lỗi xảy ra khi xóa bản ghi.');
+    }
+  };
+
+  // Schema fields (excluding section headers)
+  const schemaFields = useMemo(() => {
+    if (!formMeta || !Array.isArray(formMeta.schema_json)) return [];
+    return formMeta.schema_json.filter(f => f.type !== 'section');
+  }, [formMeta]);
+
+  // Embedded Tracker Fields
+  const trackerFields = useMemo(() => {
+    if (!formMeta || !Array.isArray(formMeta.schema_json)) return [];
+    return formMeta.schema_json.filter(f => f && f.type && (f.type.startsWith('tracker_') || f.type === 'tracker'));
+  }, [formMeta]);
+
+  // Pure input fields (excluding tracker and section fields)
+  const inputFields = useMemo(() => {
+    if (!formMeta || !Array.isArray(formMeta.schema_json)) return [];
+    return formMeta.schema_json.filter(f => f && f.type !== 'section' && !f.type.startsWith('tracker_') && f.type !== 'tracker');
+  }, [formMeta]);
+
+  const isPureTracker = trackerFields.length > 0 && inputFields.length === 0;
+
+  // Detect all unique keys in submitted data across all submissions
+  const allSubmissionKeys = useMemo(() => {
+    const keys = new Set();
+    submissions.forEach(s => {
+      if (s.submission_data && typeof s.submission_data === 'object') {
+        Object.keys(s.submission_data).forEach(k => {
+          if (k && k !== '_id') keys.add(k);
+        });
+      }
+    });
+    return Array.from(keys);
+  }, [submissions]);
+
+  // Legacy keys: keys present in historical data but no longer present in current form schema
+  const legacyKeys = useMemo(() => {
+    const currentKeys = new Set(schemaFields.map(f => f.key));
+    return allSubmissionKeys.filter(k => !currentKeys.has(k));
+  }, [allSubmissionKeys, schemaFields]);
+
+  // Helper to format any key to a human readable label
+  const formatKeyToLabel = (key) => {
+    const directField = schemaFields.find(f => f.key === key);
+    if (directField?.label) return directField.label;
+    return key
+      .replace(/_/g, ' ')
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/^./, str => str.toUpperCase())
+      .trim();
+  };
+
+  // Helper to get field label
+  const getFieldLabel = (key) => {
+    return formatKeyToLabel(key);
+  };
+
+  // Helper to resolve field value with smart fallback for renamed/legacy fields (e.g. doctor picker -> multi checkbox)
+  const getFieldValue = (subData, fieldKey) => {
+    if (!subData || typeof subData !== 'object') return '—';
+    // 1. Direct match
+    if (subData[fieldKey] !== undefined && subData[fieldKey] !== null && subData[fieldKey] !== '') {
+      const val = subData[fieldKey];
+      if (typeof val === 'boolean') return val ? '✓ Có' : '✗ Không';
+      if (Array.isArray(val)) return val.length > 0 ? val.join(', ') : '—';
+      if (typeof val === 'object') return JSON.stringify(val);
+      return String(val);
+    }
+
+    // 2. Intelligent Alias Fallback (Doctor / Nurse / Staff fields if field was renamed/deleted)
+    const normKey = fieldKey.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (normKey.includes('bacsi') || normKey.includes('doctor') || normKey.includes('kham') || normKey.includes('dieuduong') || normKey.includes('nurse')) {
+      for (const [k, v] of Object.entries(subData)) {
+        if (v !== undefined && v !== null && v !== '') {
+          const normK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (
+            (normKey.includes('bacsi') && (normK.includes('bacsi') || normK.includes('doctor') || normK.includes('staff'))) ||
+            (normKey.includes('doctor') && (normK.includes('bacsi') || normK.includes('doctor') || normK.includes('staff'))) ||
+            (normKey.includes('dieuduong') && (normK.includes('dieuduong') || normK.includes('nurse'))) ||
+            (normKey.includes('nurse') && (normK.includes('dieuduong') || normK.includes('nurse')))
+          ) {
+            if (typeof v === 'boolean') return v ? '✓ Có' : '✗ Không';
+            if (Array.isArray(v)) return val => val.length > 0 ? val.join(', ') : '—';
+            if (Array.isArray(v)) return v.join(', ');
+            if (typeof v === 'object') return JSON.stringify(v);
+            return String(v);
+          }
+        }
+      }
+    }
+
+    return '—';
+  };
+
+  const formatDateVN = (dStr) => {
+    if (!dStr) return '—';
+    const parts = String(dStr).split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return dStr;
+  };
+
+  // Distinct departments
+  const departmentsList = useMemo(() => {
+    const set = new Set();
+    submissions.forEach(s => {
+      const name = s.department_name || (s.department_code === 'personal' ? 'Tài khoản cá nhân' : s.department_code);
+      if (name) set.add(name);
+    });
+    return Array.from(set);
+  }, [submissions]);
+
+  // Filtered Submissions
+  const filteredSubmissions = useMemo(() => {
+    return submissions.filter(s => {
+      // Dept filter
+      if (selectedDept !== 'all') {
+        const dName = s.department_name || (s.department_code === 'personal' ? 'Tài khoản cá nhân' : s.department_code);
+        if (dName !== selectedDept) return false;
+      }
+
+      // Search term
+      if (!searchTerm.trim()) return true;
+      const term = searchTerm.toLowerCase();
+
+      const inMeta = (s.submitted_by_user || '').toLowerCase().includes(term) ||
+                     (s.user_full_name || '').toLowerCase().includes(term) ||
+                     (s.department_name || '').toLowerCase().includes(term) ||
+                     (s.submission_date || '').includes(term);
+
+      if (inMeta) return true;
+
+      // Search in submission_data
+      const dataVals = Object.values(s.submission_data || {}).map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(' ').toLowerCase();
+      return dataVals.includes(term);
+    });
+  }, [submissions, selectedDept, searchTerm]);
+
+  // Automated Field Aggregations (for Visual Mode)
+  const fieldAggregations = useMemo(() => {
+    const aggs = {};
+    schemaFields.forEach(field => {
+      const freqMap = {};
+      filteredSubmissions.forEach(s => {
+        const val = s.submission_data?.[field.key];
+        if (val !== undefined && val !== null && val !== '') {
+          const strVal = String(val).trim();
+          freqMap[strVal] = (freqMap[strVal] || 0) + 1;
+        }
+      });
+
+      const entries = Object.entries(freqMap).sort((a, b) => b[1] - a[1]);
+      if (entries.length > 0) {
+        aggs[field.key] = {
+          label: field.label,
+          type: field.type,
+          total: entries.reduce((acc, curr) => acc + curr[1], 0),
+          topValues: entries.slice(0, 6)
+        };
+      }
+    });
+    return aggs;
+  }, [schemaFields, filteredSubmissions]);
+
+  // KPI Calculations
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayCount = submissions.filter(s => s.submission_date === todayStr).length;
+  const uniqueSubmitters = new Set(submissions.map(s => s.submitted_by_user)).size;
+
+  // Export to Excel / CSV with BOM
+  const handleExportExcel = () => {
+    if (!filteredSubmissions.length) {
+      alert('Không có dữ liệu bản ghi để xuất file.');
+      return;
+    }
+
+    const headers = [
+      'STT',
+      'Ngày Báo Cáo',
+      'Khoa / Đơn Vị',
+      'Người Nộp',
+      'Tên Đăng Nhập',
+      ...schemaFields.map(f => f.label || f.key),
+      'Thời Gian Gửi'
+    ];
+
+    const rows = filteredSubmissions.map((s, idx) => [
+      idx + 1,
+      formatDateVN(s.submission_date),
+      s.department_name || (s.department_code === 'personal' ? 'Tài khoản cá nhân' : s.department_code),
+      s.user_full_name || s.submitted_by_user,
+      s.submitted_by_user,
+      ...schemaFields.map(f => {
+        const val = s.submission_data?.[f.key];
+        if (val === null || val === undefined) return '';
+        if (typeof val === 'object') return JSON.stringify(val);
+        return String(val);
+      }),
+      new Date(s.created_at).toLocaleString('vi-VN')
+    ]);
+
+    const csvContent = '\uFEFF' + [
+      headers.map(h => `"${String(h).replace(/"/g, '""')}"`).join(','),
+      ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
+    ].join('\r\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `BaoCao_${formMeta?.code || formCode}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const themeColor = formMeta?.theme_color || '#2563EB';
+
+  // Helper colors for field badges in visual cards
+  const BADGE_COLORS = [
+    { bg: '#EFF6FF', border: '#BFDBFE', text: '#1E40AF', label: '#3B82F6' },
+    { bg: '#ECFDF5', border: '#A7F3D0', text: '#065F46', label: '#10B981' },
+    { bg: '#FFFBEB', border: '#FDE68A', text: '#92400E', label: '#F59E0B' },
+    { bg: '#FAF5FF', border: '#E9D5FF', text: '#6B21A8', label: '#A855F7' },
+    { bg: '#FFF1F2', border: '#FECDD3', text: '#9F1239', label: '#F43F5E' },
+    { bg: '#F0FDFA', border: '#99F6E4', text: '#115E59', label: '#14B8A6' }
+  ];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
+      
+      {/* 1. TOP HEADER TOOLBAR */}
+      <div style={{
+        backgroundColor: '#FFFFFF',
+        borderRadius: '20px',
+        border: '1px solid #E2E8F0',
+        borderLeft: `6px solid ${themeColor}`,
+        padding: '1.25rem 1.75rem',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '1rem',
+        boxShadow: '0 4px 20px rgba(15, 44, 89, 0.05)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+          <button
+            type="button"
+            onClick={onBack || (() => navigate(-1))}
+            style={{
+              backgroundColor: '#F1F5F9',
+              border: '1px solid #CBD5E1',
+              borderRadius: '10px',
+              padding: '0.55rem 0.95rem',
+              cursor: 'pointer',
+              fontWeight: '700',
+              fontSize: '0.86rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              color: '#334155',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <FaArrowLeft /> Quay lại
+          </button>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+              <span style={{
+                backgroundColor: isReadOnly ? '#FEF3C7' : '#EFF6FF',
+                color: isReadOnly ? '#92400E' : '#1E40AF',
+                border: isReadOnly ? '1px solid #FDE68A' : '1px solid #BFDBFE',
+                padding: '0.2rem 0.6rem',
+                borderRadius: '6px',
+                fontSize: '0.74rem',
+                fontWeight: '800',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem'
+              }}>
+                {isReadOnly ? <><FaLock /> CHẾ ĐỘ XEM DỮ LIỆU (CHỈ ĐỌC)</> : 'HỒ SƠ BÁO CÁO TRỰC QUAN'}
+              </span>
+              <span style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#64748B', fontWeight: '700' }}>
+                /{formCode}
+              </span>
+            </div>
+            <h2 style={{ margin: 0, fontSize: '1.35rem', fontWeight: '900', color: '#0F2C59' }}>
+              {formMeta?.title || formCode}
+            </h2>
+          </div>
+        </div>
+
+        {/* Actions & View Modes */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          {!isPureTracker && (
+            <div style={{
+              display: 'flex',
+              backgroundColor: '#F1F5F9',
+              borderRadius: '14px',
+              padding: '4px',
+              border: '1px solid #CBD5E1',
+              gap: '2px'
+            }}>
+              {/* 1. XEM TRỰC QUAN */}
+              <button
+                type="button"
+                onClick={() => setViewMode('visual')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  backgroundColor: viewMode === 'visual' ? '#0F2C59' : 'transparent',
+                  color: viewMode === 'visual' ? '#FFFFFF' : '#475569',
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '0.5rem 0.95rem',
+                  fontSize: '0.84rem',
+                  fontWeight: '800',
+                  cursor: 'pointer',
+                  boxShadow: viewMode === 'visual' ? '0 4px 12px rgba(15, 44, 89, 0.25)' : 'none',
+                  transition: 'all 0.15s ease'
+                }}
+                title="Xem bảng phân tích trực quan và toàn bộ thẻ hồ sơ chi tiết"
+              >
+                <FaChartBar style={{ color: viewMode === 'visual' ? '#38BDF8' : '#64748B' }} /> Xem Trực Quan
+              </button>
+
+              {/* 2. BẢNG MA TRẬN CỘT */}
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  backgroundColor: viewMode === 'grid' ? '#0F2C59' : 'transparent',
+                  color: viewMode === 'grid' ? '#FFFFFF' : '#475569',
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '0.5rem 0.95rem',
+                  fontSize: '0.84rem',
+                  fontWeight: '800',
+                  cursor: 'pointer',
+                  boxShadow: viewMode === 'grid' ? '0 4px 12px rgba(15, 44, 89, 0.25)' : 'none',
+                  transition: 'all 0.15s ease'
+                }}
+                title="Bảng dữ liệu đầy đủ tất cả các cột"
+              >
+                <FaTable style={{ color: viewMode === 'grid' ? '#38BDF8' : '#64748B' }} /> Bảng Dữ Liệu
+              </button>
+
+              {/* 3. PHIẾU BÁO CÁO IN */}
+              <button
+                type="button"
+                onClick={() => setViewMode('dossier')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  backgroundColor: viewMode === 'dossier' ? '#0F2C59' : 'transparent',
+                  color: viewMode === 'dossier' ? '#FFFFFF' : '#475569',
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '0.5rem 0.95rem',
+                  fontSize: '0.84rem',
+                  fontWeight: '800',
+                  cursor: 'pointer',
+                  boxShadow: viewMode === 'dossier' ? '0 4px 12px rgba(15, 44, 89, 0.25)' : 'none',
+                  transition: 'all 0.15s ease'
+                }}
+                title="Định dạng phiếu giao ban tổng hợp in ấn chuẩn bệnh viện"
+              >
+                <FaRegFileAlt style={{ color: viewMode === 'dossier' ? '#38BDF8' : '#64748B' }} /> Phiếu Tổng Hợp
+              </button>
+
+              {/* 4. THU GỌN */}
+              <button
+                type="button"
+                onClick={() => setViewMode('compact')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  backgroundColor: viewMode === 'compact' ? '#0F2C59' : 'transparent',
+                  color: viewMode === 'compact' ? '#FFFFFF' : '#475569',
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '0.5rem 0.95rem',
+                  fontSize: '0.84rem',
+                  fontWeight: '800',
+                  cursor: 'pointer',
+                  boxShadow: viewMode === 'compact' ? '0 4px 12px rgba(15, 44, 89, 0.25)' : 'none',
+                  transition: 'all 0.15s ease'
+                }}
+                title="Bảng hành chính rút gọn"
+              >
+                <FaList style={{ color: viewMode === 'compact' ? '#38BDF8' : '#64748B' }} /> Thu Gọn
+              </button>
+            </div>
+          )}
+
+          {/* Export Actions */}
+          {!isPureTracker && (
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              style={{
+                backgroundColor: '#10B981',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: '10px',
+                padding: '0.5rem 0.95rem',
+                fontWeight: '800',
+                fontSize: '0.84rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
+              }}
+              title="Xuất file Excel CSV"
+            >
+              <FaFileExcel /> Xuất Excel
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={handlePrint}
+            style={{
+              backgroundColor: '#0284C7',
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: '10px',
+              padding: '0.5rem 0.85rem',
+              fontWeight: '800',
+              fontSize: '0.84rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem'
+            }}
+            title="In ấn"
+          >
+            <FaPrint /> In
+          </button>
+
+          <button
+            type="button"
+            onClick={fetchSubmissions}
+            style={{
+              backgroundColor: '#FFFFFF',
+              border: '1px solid #CBD5E1',
+              borderRadius: '10px',
+              padding: '0.5rem 0.75rem',
+              fontSize: '0.84rem',
+              fontWeight: '800',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              color: '#0F2C59'
+            }}
+            title="Làm mới"
+          >
+            <FaSync />
+          </button>
+        </div>
+      </div>
+
+      {/* READ-ONLY BANNER NOTICE (CHỈ HIỂN THỊ KHI CÓ SUBMISSIONS NHẬP LIỆU) */}
+      {isReadOnly && !isPureTracker && (
+        <div style={{
+          backgroundColor: '#EFF6FF',
+          border: '1.5px solid #BFDBFE',
+          borderRadius: '16px',
+          padding: '1rem 1.4rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.85rem',
+          color: '#1E40AF',
+          fontSize: '0.88rem',
+          fontWeight: '700',
+          boxShadow: '0 2px 10px rgba(37, 99, 235, 0.06)'
+        }}>
+          <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: '#DBEAFE', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <FaEye style={{ fontSize: '1.15rem', color: '#2563EB' }} />
+          </div>
+          <div style={{ lineHeight: 1.45 }}>
+            <div style={{ fontWeight: '900', color: '#1D4ED8', fontSize: '0.92rem', marginBottom: '2px' }}>
+              Chế Độ Xem Dữ Liệu (Chỉ Đọc)
+            </div>
+            <div style={{ color: '#334155', fontWeight: '500' }}>
+              Bạn đang ở chế độ xem thông tin hồ sơ. Mọi tính năng chỉnh sửa, nộp báo cáo mới và xóa bản ghi đã được vô hiệu hóa để bảo đảm an toàn dữ liệu.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. STATS KPI CARDS */}
+      {!isPureTracker && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+          gap: '1rem'
+        }}>
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '1rem 1.3rem', boxShadow: '0 4px 14px rgba(15, 44, 89, 0.04)', display: 'flex', alignItems: 'center', gap: '0.9rem' }}>
+            <div style={{ width: '44px', height: '44px', borderRadius: '12px', backgroundColor: '#EFF6FF', color: '#2563EB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem' }}>
+              <FaClipboardList />
+            </div>
+            <div>
+              <div style={{ fontSize: '0.74rem', color: '#64748B', fontWeight: '800', textTransform: 'uppercase' }}>TỔNG SỐ BẢN GHI</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#0F2C59' }}>{submissions.length}</div>
+            </div>
+          </div>
+
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '1rem 1.3rem', boxShadow: '0 4px 14px rgba(15, 44, 89, 0.04)', display: 'flex', alignItems: 'center', gap: '0.9rem' }}>
+            <div style={{ width: '44px', height: '44px', borderRadius: '12px', backgroundColor: '#DCFCE7', color: '#16A34A', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem' }}>
+              <FaCalendarAlt />
+            </div>
+            <div>
+              <div style={{ fontSize: '0.74rem', color: '#64748B', fontWeight: '800', textTransform: 'uppercase' }}>BẢN GHI HÔM NAY</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#16A34A' }}>{todayCount}</div>
+            </div>
+          </div>
+
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '1rem 1.3rem', boxShadow: '0 4px 14px rgba(15, 44, 89, 0.04)', display: 'flex', alignItems: 'center', gap: '0.9rem' }}>
+            <div style={{ width: '44px', height: '44px', borderRadius: '12px', backgroundColor: '#FEF3C7', color: '#D97706', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem' }}>
+              <FaUsers />
+            </div>
+            <div>
+              <div style={{ fontSize: '0.74rem', color: '#64748B', fontWeight: '800', textTransform: 'uppercase' }}>NGƯỜI NỘP</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#D97706' }}>{uniqueSubmitters}</div>
+            </div>
+          </div>
+
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '1rem 1.3rem', boxShadow: '0 4px 14px rgba(15, 44, 89, 0.04)', display: 'flex', alignItems: 'center', gap: '0.9rem' }}>
+            <div style={{ width: '44px', height: '44px', borderRadius: '12px', backgroundColor: '#F3E8FF', color: '#7E22CE', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem' }}>
+              <FaLayerGroup />
+            </div>
+            <div>
+              <div style={{ fontSize: '0.74rem', color: '#64748B', fontWeight: '800', textTransform: 'uppercase' }}>SỐ CỘT DỮ LIỆU</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#7E22CE' }}>{schemaFields.length}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. TOOLBAR: SEARCH & DATE FILTER */}
+      {!isPureTracker && (
+        <div style={{
+          backgroundColor: '#FFFFFF',
+          borderRadius: '16px',
+          border: '1px solid #E2E8F0',
+          padding: '1rem 1.4rem',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '0.85rem',
+          boxShadow: '0 2px 8px rgba(15, 44, 89, 0.03)'
+        }}>
+          {/* Search */}
+          <div style={{ position: 'relative', width: '100%', maxWidth: '340px' }}>
+            <FaSearch style={{ position: 'absolute', top: '50%', left: '0.85rem', transform: 'translateY(-50%)', color: '#94A3B8' }} />
+            <input
+              type="text"
+              placeholder="Tìm kiếm nội dung, tên, xã phường..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.55rem 0.85rem 0.55rem 2.3rem',
+                borderRadius: '10px',
+                border: '1.5px solid #CBD5E1',
+                fontSize: '0.86rem',
+                outline: 'none',
+                boxSizing: 'border-box'
+              }}
+            />
+          </div>
+
+          {/* Filters */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+            {departmentsList.length > 1 && (
+              <select
+                value={selectedDept}
+                onChange={(e) => setSelectedDept(e.target.value)}
+                style={{
+                  padding: '0.5rem 0.85rem',
+                  borderRadius: '10px',
+                  border: '1.5px solid #CBD5E1',
+                  fontSize: '0.84rem',
+                  fontWeight: '700',
+                  color: '#0F2C59',
+                  backgroundColor: '#F8FAFC',
+                  outline: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="all">-- Tất cả đơn vị / khoa ({departmentsList.length}) --</option>
+                {departmentsList.map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            )}
+
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              backgroundColor: '#EFF6FF',
+              border: '1.5px solid #BFDBFE',
+              padding: '0.35rem 0.75rem',
+              borderRadius: '10px'
+            }}>
+              <FaCalendarAlt style={{ color: '#2563EB', fontSize: '0.85rem' }} />
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                style={{ border: 'none', background: 'transparent', fontWeight: '800', color: '#1E40AF', outline: 'none', fontSize: '0.86rem', cursor: 'pointer' }}
+              />
+            </div>
+
+            {selectedDate && (
+              <button
+                type="button"
+                onClick={() => setSelectedDate('')}
+                style={{
+                  backgroundColor: '#F1F5F9',
+                  border: '1px solid #CBD5E1',
+                  borderRadius: '8px',
+                  padding: '0.45rem 0.75rem',
+                  fontSize: '0.8rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  color: '#334155'
+                }}
+              >
+                Xem tất cả ngày
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* LIVE TRACKER WIDGETS (TỰ ĐỘNG HIỂN THỊ DỮ LIỆU BỆNH VIỆN THỜI GIAN THỰC) */}
+      {trackerFields.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {trackerFields.map((tf, tIdx) => (
+            <div key={tf.id || tIdx}>
+              <EmbeddedTrackerField
+                field={tf}
+                themeColor={themeColor}
+                currentDate={selectedDate || new Date().toISOString().split('T')[0]}
+                currentUserDept={user?.department_code}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* LEGACY DATA PRESERVATION & DISCOVERY BANNER */}
+      {legacyKeys.length > 0 && !isPureTracker && (
+        <div style={{
+          backgroundColor: '#F0FDF4',
+          border: '1.5px solid #BBF7D0',
+          borderRadius: '16px',
+          padding: '0.85rem 1.4rem',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '0.75rem',
+          boxShadow: '0 2px 8px rgba(16, 185, 129, 0.06)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <FaCheckCircle style={{ color: '#16A34A', fontSize: '1.2rem', flexShrink: 0 }} />
+            <div>
+              <div style={{ fontWeight: '800', color: '#15803D', fontSize: '0.88rem' }}>
+                Bảo toàn dữ liệu lịch sử ({legacyKeys.length} trường dữ liệu cũ: {legacyKeys.map(k => formatKeyToLabel(k)).join(', ')})
+              </div>
+              <div style={{ fontSize: '0.78rem', color: '#4B5563', marginTop: '2px' }}>
+                Toàn bộ dữ liệu bác sĩ, điều dưỡng hoặc các trường cũ trước đây đều được lưu trữ nguyên vẹn 100% trong hệ thống.
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowLegacyColumns(!showLegacyColumns)}
+            style={{
+              backgroundColor: showLegacyColumns ? '#15803D' : '#FFFFFF',
+              color: showLegacyColumns ? '#FFFFFF' : '#15803D',
+              border: '1.5px solid #15803D',
+              borderRadius: '10px',
+              padding: '0.4rem 0.85rem',
+              fontSize: '0.8rem',
+              fontWeight: '800',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <FaEye /> {showLegacyColumns ? 'Ẩn cột trường cũ' : 'Hiện cột trường cũ'}
+          </button>
+        </div>
+      )}
+
+      {/* 4. MAIN VIEWS (CHỈ DÀNH CHO FORM CÓ BẢN GHI NHẬP LIỆU) */}
+      {!isPureTracker && (
+        loading ? (
+        <MedicalLoader 
+          text="Đang nạp dữ liệu trực quan..." 
+          subtext="TTYT Khu Vực Bình Long • CSDL Báo Cáo Chuyên Môn"
+          minHeight="320px"
+        />
+      ) : filteredSubmissions.length === 0 ? (
+        trackerFields.length > 0 ? (
+          <div style={{
+            backgroundColor: '#F8FAFC',
+            borderRadius: '16px',
+            border: '1px solid #E2E8F0',
+            padding: '1.25rem 1.5rem',
+            textAlign: 'center',
+            color: '#64748B',
+            fontSize: '0.84rem'
+          }}>
+            <FaCheckCircle style={{ color: '#10B981', marginRight: '0.45rem' }} />
+            Dữ liệu theo dõi thời gian thực của bệnh viện đã được trích xuất và hiển thị trực tiếp ở bảng trên.
+          </div>
+        ) : (
+          <div style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: '20px',
+            border: '1px dashed #CBD5E1',
+            padding: '4rem 1.5rem',
+            textAlign: 'center',
+            color: '#64748B'
+          }}>
+            <FaClipboardList style={{ fontSize: '3rem', color: '#CBD5E1', marginBottom: '0.75rem' }} />
+            <h4 style={{ margin: '0 0 0.4rem 0', fontSize: '1.2rem', fontWeight: '800', color: '#0F2C59' }}>
+              {selectedDate ? `Chưa Có Bản Ghi Nào Trong Ngày ${formatDateVN(selectedDate)}` : 'Biểu Mẫu Này Hiện Chưa Có Bản Ghi Nào'}
+            </h4>
+            <p style={{ margin: '0 0 1.25rem 0', fontSize: '0.88rem', color: '#64748B' }}>
+              {selectedDate ? 'Có thể bản ghi đã được nộp ở một ngày khác. Hãy bấm nút bên dưới để xem toàn bộ bản ghi của mọi ngày.' : 'Chưa có ai điền và nộp dữ liệu cho biểu mẫu này. Hãy bấm Nhập Form để điền bản ghi đầu tiên.'}
+            </p>
+
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              {selectedDate && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate('')}
+                  style={{
+                    backgroundColor: '#2563EB',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: '10px',
+                    padding: '0.65rem 1.25rem',
+                    fontWeight: '800',
+                    fontSize: '0.86rem',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)'
+                  }}
+                >
+                  📅 Xem Tất Cả Các Ngày (Bỏ lọc ngày)
+                </button>
+              )}
+              {!isReadOnly && (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/custom-form/${formCode}`)}
+                  style={{
+                    backgroundColor: '#10B981',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: '10px',
+                    padding: '0.65rem 1.25rem',
+                    fontWeight: '800',
+                    fontSize: '0.86rem',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
+                  }}
+                >
+                  ➕ Điền Bản Ghi Mới Ngay
+                </button>
+              )}
+            </div>
+          </div>
+        )
+      ) : (
+        <>
+          {/* ========================================================================= */}
+          {/* MODE 1: CHẾ ĐỘ XEM TRỰC QUAN CHUYÊN SÂU (VISUAL DASHBOARD & CASE CARDS)   */}
+          {/* ========================================================================= */}
+          {viewMode === 'visual' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
+              
+              {/* Automated Visual Analytics Breakdown Bar */}
+              {Object.keys(fieldAggregations).length > 0 && (
+                <div style={{
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: '20px',
+                  border: '1.5px solid #E2E8F0',
+                  padding: '1.4rem 1.6rem',
+                  boxShadow: '0 4px 18px rgba(15, 44, 89, 0.05)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1.5px solid #F1F5F9', paddingBottom: '0.75rem' }}>
+                    <FaChartBar style={{ color: '#2563EB', fontSize: '1.1rem' }} />
+                    <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '900', color: '#0F2C59' }}>
+                      Phân Tích & Thống Kê Nhanh Theo Các Trường Dữ Liệu
+                    </h3>
+                  </div>
+
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                    gap: '1rem'
+                  }}>
+                    {Object.entries(fieldAggregations).map(([key, agg], aIdx) => {
+                      const color = BADGE_COLORS[aIdx % BADGE_COLORS.length];
+                      return (
+                        <div
+                          key={key}
+                          style={{
+                            backgroundColor: color.bg,
+                            border: `1px solid ${color.border}`,
+                            borderRadius: '14px',
+                            padding: '1rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.6rem'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: '900', color: color.text, textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                              ❖ {agg.label}
+                            </span>
+                            <span style={{ fontSize: '0.72rem', backgroundColor: '#FFFFFF', padding: '0.15rem 0.5rem', borderRadius: '20px', fontWeight: '800', color: color.text, border: `1px solid ${color.border}` }}>
+                              {agg.total} lượt nhập
+                            </span>
+                          </div>
+
+                          {/* Top values pills */}
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                            {agg.topValues.map(([valName, count], vIdx) => (
+                              <span
+                                key={vIdx}
+                                style={{
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#0F2C59',
+                                  padding: '0.25rem 0.6rem',
+                                  borderRadius: '8px',
+                                  fontSize: '0.78rem',
+                                  fontWeight: '800',
+                                  boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                                  border: '1px solid rgba(0,0,0,0.06)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.3rem'
+                                }}
+                              >
+                                {valName} <strong style={{ color: color.label, fontSize: '0.74rem' }}>({count})</strong>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Visual Dossier Cards List (Bung toàn bộ hồ sơ ra xem hàng ngang rộng rãi full-width 100%) */}
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1.5rem',
+                width: '100%'
+              }}>
+                {filteredSubmissions.map((sub, idx) => {
+                  // Find main title name if any (e.g. Tên, Họ và tên)
+                  const primaryField = schemaFields[0];
+                  const primaryVal = primaryField ? getFieldValue(sub.submission_data, primaryField.key) : `Bản Ghi #${idx + 1}`;
+
+                  return (
+                    <div
+                      key={sub.id}
+                      style={{
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: '24px',
+                        border: '1.5px solid #E2E8F0',
+                        boxShadow: '0 8px 25px rgba(15, 44, 89, 0.06)',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                        position: 'relative',
+                        width: '100%',
+                        boxSizing: 'border-box'
+                      }}
+                    >
+                      {/* Top Header Card Banner */}
+                      <div style={{
+                        background: 'linear-gradient(135deg, #0F2C59 0%, #1E40AF 100%)',
+                        padding: '1.1rem 1.6rem',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '0.75rem'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                          <span style={{
+                            width: '34px',
+                            height: '34px',
+                            borderRadius: '50%',
+                            backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: '900',
+                            fontSize: '0.9rem'
+                          }}>
+                            #{idx + 1}
+                          </span>
+                          <div>
+                            <div style={{ fontSize: '1.18rem', fontWeight: '900', color: '#FFFFFF', lineHeight: 1.2 }}>
+                              {String(primaryVal !== '—' ? primaryVal : `Bản Ghi #${idx + 1}`)}
+                            </div>
+                            <div style={{ fontSize: '0.78rem', color: '#93C5FD', marginTop: '2px' }}>
+                              {sub.user_full_name ? `${sub.user_full_name} (@${sub.submitted_by_user})` : `@${sub.submitted_by_user}`}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Right: Date Badge, Edit & Delete Buttons */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', flexWrap: 'wrap' }}>
+                          <span style={{
+                            backgroundColor: 'rgba(255, 255, 255, 0.18)',
+                            color: '#FFFFFF',
+                            padding: '0.3rem 0.8rem',
+                            borderRadius: '20px',
+                            fontSize: '0.78rem',
+                            fontWeight: '800'
+                          }}>
+                            {formatDateVN(sub.submission_date)}
+                          </span>
+
+                          {canEditSubmission(sub) && (
+                            <button
+                              type="button"
+                              onClick={() => setEditingSubmission(sub)}
+                              style={{
+                                backgroundColor: '#2563EB',
+                                border: 'none',
+                                color: '#FFFFFF',
+                                borderRadius: '8px',
+                                padding: '0.35rem 0.8rem',
+                                fontSize: '0.78rem',
+                                fontWeight: '800',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                boxShadow: '0 2px 6px rgba(37, 99, 235, 0.35)',
+                                transition: 'all 0.15s ease'
+                              }}
+                              onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#1D4ED8'}
+                              onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#2563EB'}
+                              title="Chỉnh sửa bản ghi này"
+                            >
+                              <FaEdit size={11} /> Sửa
+                            </button>
+                          )}
+
+                          {canDeleteSubmission(sub) && (
+                            <button
+                              type="button"
+                              onClick={(e) => handleDeleteSubmission(sub.id, e)}
+                              style={{
+                                backgroundColor: '#EF4444',
+                                border: 'none',
+                                color: '#FFFFFF',
+                                borderRadius: '8px',
+                                padding: '0.35rem 0.8rem',
+                                fontSize: '0.78rem',
+                                fontWeight: '800',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                boxShadow: '0 2px 6px rgba(239, 68, 68, 0.35)',
+                                transition: 'all 0.15s ease'
+                              }}
+                              onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#DC2626'}
+                              onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#EF4444'}
+                              title="Xóa bản ghi này"
+                            >
+                              <FaTrash size={11} /> Xóa
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Card Content Grid (All fields fully expanded horizontally) */}
+                      <div style={{ padding: '1.4rem 1.6rem', display: 'flex', flexDirection: 'column', gap: '0.85rem', flex: 1 }}>
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                          gap: '0.85rem'
+                        }}>
+                          {schemaFields.map((field, fIdx) => {
+                            const displayVal = getFieldValue(sub.submission_data, field.key);
+                            const color = BADGE_COLORS[fIdx % BADGE_COLORS.length];
+
+                            return (
+                              <div
+                                key={field.id || field.key}
+                                style={{
+                                  backgroundColor: color.bg,
+                                  border: `1.5px solid ${color.border}`,
+                                  borderRadius: '12px',
+                                  padding: '0.75rem 1rem',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '0.3rem'
+                                }}
+                              >
+                                <span style={{ fontSize: '0.74rem', fontWeight: '800', color: color.label, textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                                  {field.label}
+                                </span>
+                                <span style={{ fontSize: '0.98rem', fontWeight: '900', color: '#0F2C59', wordBreak: 'break-word', lineHeight: 1.35 }}>
+                                  {displayVal}
+                                </span>
+                              </div>
+                            );
+                          })}
+
+                          {/* Render Legacy Fields if toggled */}
+                          {showLegacyColumns && legacyKeys.map((legKey) => {
+                            const rawVal = sub.submission_data?.[legKey];
+                            if (rawVal === undefined || rawVal === null || rawVal === '') return null;
+                            const displayVal = typeof rawVal === 'object' ? JSON.stringify(rawVal) : String(rawVal);
+                            return (
+                              <div
+                                key={legKey}
+                                style={{
+                                  backgroundColor: '#FEF3C7',
+                                  border: '1.5px solid #FDE68A',
+                                  borderRadius: '12px',
+                                  padding: '0.75rem 1rem',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '0.3rem'
+                                }}
+                              >
+                                <span style={{ fontSize: '0.74rem', fontWeight: '800', color: '#92400E', textTransform: 'uppercase', letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                  📌 {formatKeyToLabel(legKey)} <small style={{ backgroundColor: '#F59E0B', color: '#fff', padding: '1px 5px', borderRadius: '4px', fontSize: '0.65rem' }}>Lịch sử</small>
+                                </span>
+                                <span style={{ fontSize: '0.98rem', fontWeight: '900', color: '#78350F', wordBreak: 'break-word', lineHeight: 1.35 }}>
+                                  {displayVal}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Card Footer Bar */}
+                      <div style={{
+                        padding: '0.85rem 1.6rem',
+                        backgroundColor: '#F8FAFC',
+                        borderTop: '1px solid #E2E8F0',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        fontSize: '0.78rem',
+                        color: '#64748B'
+                      }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <FaHospital style={{ color: '#2563EB' }} /> {sub.department_name || (sub.department_code === 'personal' ? 'Tài khoản cá nhân' : sub.department_code)}
+                        </span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <FaClock /> {new Date(sub.created_at).toLocaleTimeString('vi-VN')}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* MODE 2: BẢNG MA TRẬN ĐẦY ĐỦ CÁC CỘT DỮ LIỆU (LARGE MATRIX TABLE)         */}
+          {/* ========================================================================= */}
+          {viewMode === 'grid' && (
+            <div style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: '20px',
+              border: '1px solid #E2E8F0',
+              overflow: 'hidden',
+              boxShadow: '0 6px 24px rgba(15, 44, 89, 0.05)'
+            }}>
+              <div className="touch-scroll responsive-table-wrapper" style={{ overflowX: 'auto', maxHeight: '72vh', marginBottom: 0 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem', whiteSpace: 'nowrap' }}>
+                  <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
+                    <tr style={{ backgroundColor: '#0F2C59', color: '#FFFFFF', borderBottom: '2px solid #1E3A8A' }}>
+                      <th style={{ padding: '0.85rem 1rem', width: '50px', textAlign: 'center', fontWeight: '800' }}>STT</th>
+                      <th style={{ padding: '0.85rem 1rem', fontWeight: '800', backgroundColor: '#1E3A8A' }}>NGÀY BÁO CÁO</th>
+                      <th style={{ padding: '0.85rem 1rem', fontWeight: '800' }}>KHOA / ĐƠN VỊ</th>
+                      <th style={{ padding: '0.85rem 1rem', fontWeight: '800' }}>NGƯỜI NỘP</th>
+
+                      {/* DYNAMIC FIELD COLUMNS */}
+                      {schemaFields.map(field => (
+                        <th key={field.id || field.key} style={{ padding: '0.85rem 1.1rem', fontWeight: '800', backgroundColor: '#172554', color: '#93C5FD', letterSpacing: '0.3px' }}>
+                          {field.label}
+                        </th>
+                      ))}
+
+                      {/* LEGACY COLUMNS IF ENABLED */}
+                      {showLegacyColumns && legacyKeys.map(legKey => (
+                        <th key={legKey} style={{ padding: '0.85rem 1.1rem', fontWeight: '800', backgroundColor: '#78350F', color: '#FDE68A', letterSpacing: '0.3px' }}>
+                          {formatKeyToLabel(legKey)} (Lịch sử)
+                        </th>
+                      ))}
+
+                      <th style={{ padding: '0.85rem 1rem', fontWeight: '800' }}>THỜI ĐIỂM GỬI</th>
+                      <th style={{ padding: '0.85rem 1rem', textAlign: 'center', fontWeight: '800' }}>THAO TÁC</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredSubmissions.map((sub, idx) => (
+                      <tr
+                        key={sub.id}
+                        style={{
+                          borderBottom: '1px solid #E2E8F0',
+                          backgroundColor: idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC',
+                          transition: 'background-color 0.15s ease'
+                        }}
+                        onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#EFF6FF'}
+                        onMouseOut={(e) => e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC'}
+                      >
+                        <td style={{ padding: '0.85rem 1rem', textAlign: 'center', color: '#64748B', fontWeight: '800' }}>
+                          #{idx + 1}
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem', fontWeight: '800', color: '#1E40AF', backgroundColor: 'rgba(239, 246, 255, 0.5)' }}>
+                          {formatDateVN(sub.submission_date)}
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem', fontWeight: '700', color: '#0F2C59' }}>
+                          {sub.department_name || (sub.department_code === 'personal' ? '👤 Tài khoản cá nhân' : sub.department_code)}
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem', color: '#334155', fontWeight: '600' }}>
+                          {sub.user_full_name ? `${sub.user_full_name} (@${sub.submitted_by_user})` : `@${sub.submitted_by_user}`}
+                        </td>
+
+                        {/* RENDER DYNAMIC FIELD VALUES */}
+                        {schemaFields.map(field => {
+                          const displayVal = getFieldValue(sub.submission_data, field.key);
+
+                          return (
+                            <td key={field.id || field.key} style={{ padding: '0.85rem 1.1rem', color: '#0F2C59', fontWeight: '600' }}>
+                              <span style={{
+                                backgroundColor: displayVal !== '—' ? '#F1F5F9' : 'transparent',
+                                padding: displayVal !== '—' ? '0.2rem 0.55rem' : '0',
+                                borderRadius: '6px',
+                                border: displayVal !== '—' ? '1px solid #E2E8F0' : 'none'
+                              }}>
+                                {displayVal}
+                              </span>
+                            </td>
+                          );
+                        })}
+
+                        {/* RENDER LEGACY COLUMN VALUES */}
+                        {showLegacyColumns && legacyKeys.map(legKey => {
+                          const rawVal = sub.submission_data?.[legKey];
+                          const displayVal = (rawVal !== undefined && rawVal !== null && rawVal !== '') ? (typeof rawVal === 'object' ? JSON.stringify(rawVal) : String(rawVal)) : '—';
+                          return (
+                            <td key={legKey} style={{ padding: '0.85rem 1.1rem', backgroundColor: '#FFFBEB', color: '#92400E', fontWeight: '600' }}>
+                              {displayVal}
+                            </td>
+                          );
+                        })}
+
+                        <td style={{ padding: '0.85rem 1rem', color: '#64748B', fontSize: '0.8rem' }}>
+                          {new Date(sub.created_at).toLocaleString('vi-VN')}
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'inline-flex', gap: '0.35rem', alignItems: 'center' }}>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedSubmission(sub)}
+                              style={{
+                                backgroundColor: '#EFF6FF',
+                                color: '#2563EB',
+                                border: '1.5px solid #BFDBFE',
+                                borderRadius: '8px',
+                                padding: '0.35rem 0.65rem',
+                                fontWeight: '800',
+                                fontSize: '0.78rem',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.3rem'
+                              }}
+                            >
+                              <FaEye /> Xem
+                            </button>
+
+                            {canEditSubmission(sub) && (
+                              <button
+                                type="button"
+                                onClick={() => setEditingSubmission(sub)}
+                                style={{
+                                  backgroundColor: '#EFF6FF',
+                                  color: '#1D4ED8',
+                                  border: '1.5px solid #93C5FD',
+                                  borderRadius: '8px',
+                                  padding: '0.35rem 0.65rem',
+                                  fontWeight: '800',
+                                  fontSize: '0.78rem',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.3rem'
+                                }}
+                                title="Chỉnh sửa bản ghi này"
+                              >
+                                <FaEdit /> Sửa
+                              </button>
+                            )}
+
+                            {canDeleteSubmission(sub) && (
+                              <button
+                                type="button"
+                                onClick={(e) => handleDeleteSubmission(sub.id, e)}
+                                style={{
+                                  backgroundColor: '#FEF2F2',
+                                  color: '#DC2626',
+                                  border: '1.5px solid #FECACA',
+                                  borderRadius: '8px',
+                                  padding: '0.35rem 0.6rem',
+                                  fontWeight: '800',
+                                  fontSize: '0.78rem',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem'
+                                }}
+                                title="Xóa bản ghi này"
+                              >
+                                <FaTrash size={11} /> Xóa
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* MODE 3: ĐỊNH DẠNG PHIẾU GIAO BAN IN ẤN CHUẨN Y TẾ (DOSSIER DOCUMENT)     */}
+          {/* ========================================================================= */}
+          {viewMode === 'dossier' && (
+            <div style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: '20px',
+              border: '2px solid #0F2C59',
+              padding: '2.5rem 2rem',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.08)',
+              fontFamily: "'Times New Roman', Arial, serif"
+            }}>
+              {/* Official Header */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '2px solid #000', paddingBottom: '0.75rem', marginBottom: '1.25rem' }}>
+                <div>
+                  <div style={{ fontSize: '0.85rem', textTransform: 'uppercase', color: '#1E3A8A', fontWeight: 'bold' }}>Sở Y Tế Thành Phố Đồng Nai</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 'bold', textTransform: 'uppercase', color: '#0F2C59' }}>TTYT Khu Vực Bình Long</div>
+                  <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: '#2563EB', marginTop: '3px' }}>
+                    Biểu Mẫu: {formMeta?.title || formCode}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Cộng Hòa Xã Hội Chủ Nghĩa Việt Nam</div>
+                  <div style={{ fontSize: '0.88rem', fontWeight: 'bold', fontStyle: 'italic', textDecoration: 'underline' }}>Độc lập - Tự do - Hạnh phúc</div>
+                  <div style={{ fontSize: '0.8rem', fontStyle: 'italic', marginTop: '4px', color: '#475569' }}>
+                    Bình Long, ngày {new Date().getDate()} tháng {new Date().getMonth() + 1} năm {new Date().getFullYear()}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+                <h2 style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#0F2C59', textTransform: 'uppercase', margin: '0 0 0.25rem 0' }}>
+                  Bảng Tổng Hợp Dữ Liệu Báo Cáo Chuyên Môn
+                </h2>
+                <div style={{ fontSize: '0.9rem', fontStyle: 'italic', color: '#475569' }}>
+                  Tổng hợp {filteredSubmissions.length} bản ghi đã ghi nhận
+                </div>
+              </div>
+
+              {/* Dossier Table */}
+              <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #000', fontSize: '0.9rem' }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#D9E8FB', color: '#0F2C59', borderBottom: '1px solid #000' }}>
+                    <th style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'center', width: '40px' }}>STT</th>
+                    <th style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'center' }}>Ngày Báo Cáo</th>
+                    <th style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'center' }}>Đơn Vị</th>
+                    <th style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'center' }}>Người Nộp</th>
+                    {schemaFields.map(f => (
+                      <th key={f.id || f.key} style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'center' }}>{f.label}</th>
+                    ))}
+                    <th style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'center' }}>Thời Điểm</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSubmissions.map((s, idx) => (
+                    <tr key={s.id} style={{ backgroundColor: idx % 2 === 0 ? '#FFFFFF' : '#F9FBFF' }}>
+                      <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'center', fontWeight: 'bold' }}>{idx + 1}</td>
+                      <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'center', fontWeight: 'bold' }}>{formatDateVN(s.submission_date)}</td>
+                      <td style={{ border: '1px solid #000', padding: '6px 8px' }}>{s.department_name || (s.department_code === 'personal' ? 'Tài khoản cá nhân' : s.department_code)}</td>
+                      <td style={{ border: '1px solid #000', padding: '6px 8px', fontWeight: 'bold' }}>{s.user_full_name || s.submitted_by_user}</td>
+                      {schemaFields.map(f => (
+                        <td key={f.id || f.key} style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'center' }}>
+                          {getFieldValue(s.submission_data, f.key)}
+                        </td>
+                      ))}
+                      <td style={{ border: '1px solid #000', padding: '6px 8px', fontSize: '0.8rem', textAlign: 'center' }}>
+                        {new Date(s.created_at).toLocaleTimeString('vi-VN')} {formatDateVN(s.submission_date)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* Signatures */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', marginTop: '2.5rem', textAlign: 'center' }}>
+                <div>
+                  <div style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.9rem' }}>Người Lập Bảng</div>
+                  <div style={{ fontStyle: 'italic', fontSize: '0.8rem', color: '#64748B', marginTop: '2px' }}>(Ký và ghi rõ họ tên)</div>
+                  <div style={{ height: '60px' }}></div>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>Phòng Kế Hoạch Nghiệp Vụ</div>
+                </div>
+                <div>
+                  <div style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.9rem' }}>Lãnh Đạo Đơn Vị</div>
+                  <div style={{ fontStyle: 'italic', fontSize: '0.8rem', color: '#64748B', marginTop: '2px' }}>(Ký, đóng dấu)</div>
+                  <div style={{ height: '60px' }}></div>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>Ban Giám Đốc</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* MODE 4: BẢNG HÀNH CHÍNH RÚT GỌN (COMPACT ADMINISTRATIVE TABLE)            */}
+          {/* ========================================================================= */}
+          {viewMode === 'compact' && (
+            <div style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: '20px',
+              border: '1px solid #E2E8F0',
+              overflow: 'hidden',
+              boxShadow: '0 4px 14px rgba(15, 44, 89, 0.04)'
+            }}>
+              <div className="touch-scroll responsive-table-wrapper" style={{ overflowX: 'auto', marginBottom: 0 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '2px solid #E2E8F0', color: '#0F2C59' }}>
+                      <th style={{ padding: '0.85rem 1rem', width: '50px', textAlign: 'center', fontWeight: '800' }}>STT</th>
+                      <th style={{ padding: '0.85rem 1rem', fontWeight: '800' }}>NGÀY BÁO CÁO</th>
+                      <th style={{ padding: '0.85rem 1rem', fontWeight: '800' }}>KHOA / ĐƠN VỊ</th>
+                      <th style={{ padding: '0.85rem 1rem', fontWeight: '800' }}>NGƯỜI NỘP</th>
+                      <th style={{ padding: '0.85rem 1rem', fontWeight: '800' }}>THỜI ĐIỂM GỬI</th>
+                      <th style={{ padding: '0.85rem 1rem', textAlign: 'center', fontWeight: '800' }}>THAO TÁC</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredSubmissions.map((sub, idx) => (
+                      <tr
+                        key={sub.id}
+                        style={{
+                          borderBottom: '1px solid #F1F5F9',
+                          backgroundColor: idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC'
+                        }}
+                      >
+                        <td style={{ padding: '0.8rem 1rem', textAlign: 'center', color: '#64748B', fontWeight: '700' }}>
+                          {idx + 1}
+                        </td>
+                        <td style={{ padding: '0.8rem 1rem', fontWeight: '800', color: '#1E40AF' }}>
+                          {formatDateVN(sub.submission_date)}
+                        </td>
+                        <td style={{ padding: '0.8rem 1rem', fontWeight: '700', color: '#0F2C59' }}>
+                          {sub.department_name || (sub.department_code === 'personal' ? '👤 Tài khoản cá nhân' : sub.department_code)}
+                        </td>
+                        <td style={{ padding: '0.8rem 1rem', color: '#334155', fontWeight: '600' }}>
+                          {sub.user_full_name ? `${sub.user_full_name} (@${sub.submitted_by_user})` : `@${sub.submitted_by_user}`}
+                        </td>
+                        <td style={{ padding: '0.8rem 1rem', color: '#64748B', fontSize: '0.8rem' }}>
+                          {new Date(sub.created_at).toLocaleString('vi-VN')}
+                        </td>
+                        <td style={{ padding: '0.8rem 1rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'inline-flex', gap: '0.35rem', alignItems: 'center' }}>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedSubmission(sub)}
+                              style={{
+                                backgroundColor: '#EFF6FF',
+                                color: '#2563EB',
+                                border: '1.5px solid #BFDBFE',
+                                borderRadius: '8px',
+                                padding: '0.4rem 0.75rem',
+                                fontWeight: '800',
+                                fontSize: '0.8rem',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem'
+                              }}
+                            >
+                              <FaEye /> Xem
+                            </button>
+
+                            {canEditSubmission(sub) && (
+                              <button
+                                type="button"
+                                onClick={() => setEditingSubmission(sub)}
+                                style={{
+                                  backgroundColor: '#EFF6FF',
+                                  color: '#1D4ED8',
+                                  border: '1.5px solid #93C5FD',
+                                  borderRadius: '8px',
+                                  padding: '0.4rem 0.75rem',
+                                  fontWeight: '800',
+                                  fontSize: '0.8rem',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.35rem'
+                                }}
+                                title="Chỉnh sửa bản ghi này"
+                              >
+                                <FaEdit /> Sửa
+                              </button>
+                            )}
+
+                            {canDeleteSubmission(sub) && (
+                              <button
+                                type="button"
+                                onClick={(e) => handleDeleteSubmission(sub.id, e)}
+                                style={{
+                                  backgroundColor: '#FEF2F2',
+                                  color: '#DC2626',
+                                  border: '1.5px solid #FECACA',
+                                  borderRadius: '8px',
+                                  padding: '0.4rem 0.65rem',
+                                  fontWeight: '800',
+                                  fontSize: '0.8rem',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem'
+                                }}
+                                title="Xóa bản ghi này"
+                              >
+                                <FaTrash size={11} /> Xóa
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      ))}
+
+      {/* 5. SUBMISSION DETAIL MODAL */}
+      {selectedSubmission && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.75)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          zIndex: 999999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1rem',
+          boxSizing: 'border-box'
+        }}>
+          <div style={{
+            width: '100%',
+            maxWidth: '680px',
+            maxHeight: '90vh',
+            backgroundColor: '#FFFFFF',
+            borderRadius: '24px',
+            boxShadow: '0 25px 60px rgba(0,0,0,0.35)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            animation: 'fadeInUp 0.2s ease-out'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              background: 'linear-gradient(135deg, #0F2C59 0%, #1E40AF 100%)',
+              padding: '1.3rem 1.6rem',
+              color: '#FFFFFF',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '900' }}>
+                  Chi Tiết Báo Cáo — Ngày {formatDateVN(selectedSubmission.submission_date)}
+                </h3>
+                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.78rem', color: '#93C5FD', fontWeight: '600' }}>
+                  Đơn vị: {selectedSubmission.department_name || selectedSubmission.department_code} • Người nộp: {selectedSubmission.user_full_name || selectedSubmission.submitted_by_user}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedSubmission(null)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.15)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '32px',
+                  height: '32px',
+                  color: '#FFFFFF',
+                  cursor: 'pointer',
+                  fontSize: '1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <FaTimes />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                {Object.entries(selectedSubmission.submission_data || {}).map(([k, v]) => {
+                  const isLegacy = !schemaFields.some(f => f.key === k);
+                  return (
+                    <div key={k} style={{ backgroundColor: isLegacy ? '#FFFBEB' : '#F8FAFC', padding: '0.85rem 1.1rem', borderRadius: '12px', border: isLegacy ? '1.5px solid #FDE68A' : '1px solid #E2E8F0' }}>
+                      <div style={{ fontSize: '0.78rem', fontWeight: '800', color: isLegacy ? '#B45309' : '#2563EB', textTransform: 'uppercase', marginBottom: '0.35rem', letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        {getFieldLabel(k)} {isLegacy && <span style={{ backgroundColor: '#F59E0B', color: '#fff', padding: '1px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: '800' }}>Dữ liệu lịch sử</span>}
+                      </div>
+                      <div style={{ fontSize: '0.94rem', fontWeight: '700', color: isLegacy ? '#78350F' : '#0F2C59', lineHeight: 1.45 }}>
+                        {typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v || '—')}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{ padding: '1rem 1.6rem', borderTop: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#F8FAFC' }}>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                {canDeleteSubmission(selectedSubmission) && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteSubmission(selectedSubmission.id)}
+                    style={{
+                      backgroundColor: '#FEF2F2',
+                      color: '#DC2626',
+                      border: '1.5px solid #FECACA',
+                      borderRadius: '10px',
+                      padding: '0.55rem 1.1rem',
+                      fontWeight: '800',
+                      fontSize: '0.85rem',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.4rem'
+                    }}
+                  >
+                    <FaTrash size={12} /> Xóa Bản Ghi
+                  </button>
+                )}
+
+                {canEditSubmission(selectedSubmission) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const s = selectedSubmission;
+                      setSelectedSubmission(null);
+                      setEditingSubmission(s);
+                    }}
+                    style={{
+                      backgroundColor: '#EFF6FF',
+                      color: '#1D4ED8',
+                      border: '1.5px solid #93C5FD',
+                      borderRadius: '10px',
+                      padding: '0.55rem 1.1rem',
+                      fontWeight: '800',
+                      fontSize: '0.85rem',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.4rem'
+                    }}
+                  >
+                    <FaEdit size={12} /> Chỉnh Sửa
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedSubmission(null)}
+                style={{
+                  backgroundColor: '#2563EB',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '0.6rem 1.5rem',
+                  fontWeight: '800',
+                  fontSize: '0.9rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)'
+                }}
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 6. EDIT SUBMISSION MODAL */}
+      {editingSubmission && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.8)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          zIndex: 999999,
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'center',
+          padding: '1.5rem 1rem',
+          overflowY: 'auto'
+        }}>
+          <div style={{
+            width: '100%',
+            maxWidth: '960px',
+            backgroundColor: '#FFFFFF',
+            borderRadius: '24px',
+            boxShadow: '0 25px 60px rgba(0,0,0,0.4)',
+            padding: '1.5rem',
+            position: 'relative',
+            animation: 'fadeInUp 0.2s ease-out',
+            marginBottom: '2rem'
+          }}>
+            <DynamicFormRenderer
+              formCode={formCode}
+              initialMeta={formMeta}
+              initialSubmission={editingSubmission}
+              onSubmissionUpdated={(updatedRecord) => {
+                setSubmissions(prev => prev.map(s => s.id === updatedRecord.id ? { ...s, ...updatedRecord } : s));
+                if (selectedSubmission?.id === updatedRecord.id) {
+                  setSelectedSubmission(prev => ({ ...prev, ...updatedRecord }));
+                }
+                setEditingSubmission(null);
+              }}
+              onBack={() => setEditingSubmission(null)}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default DynamicFormSubmissions;

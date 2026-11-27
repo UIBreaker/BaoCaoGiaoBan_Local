@@ -1,0 +1,26 @@
+{
+  "name": "hospital-report-system",
+  "version": "2.0.0",
+  "description": "Hệ thống Báo cáo Giao ban - Bệnh viện Đa khoa Khu vực Bình Long",
+  "main": "api/index.js",
+  "scripts": {
+    "build": "npm --prefix client run build",
+    "start": "node lan-trial/run.cjs start",
+    "test": "node lan-trial/smoke.cjs"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "compression": "^1.8.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "exceljs": "^4.4.0",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mysql2": "^3.23.2",
+    "nodemailer": "^9.0.6",
+    "router": "^2.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
+  }
+}

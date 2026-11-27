@@ -4,6 +4,17 @@ Checkout này được xuất có chọn lọc từ commit `07476dc` của `hosp
 
 ## Chạy trên Windows
 
+### Chạy bằng một nút và mang dữ liệu sang máy khác
+
+1. **Trên máy cũ**, nếu dự án đang chạy, mở một cửa sổ PowerShell khác và chạy `node .\lan-trial\run.cjs stop` từ thư mục dự án. Đợi cửa sổ chạy web kết thúc. Sau đó sao chép **cả thư mục `.lan-trial`**, gồm `mysql-data`, `config.json`, `initialized` và thư mục MySQL đã giải nén `mysql-8.4.13-winx64`. Giữ bản sao lưu ở nơi riêng tư vì nó chứa cả dữ liệu và mật khẩu.
+2. **Trên máy mới**, cài Node.js 24, tải và giải nén dự án từ GitHub, rồi bấm đúp **`Chay Bao Cao Giao Ban.cmd`**. Chọn thư mục `.lan-trial` đã sao lưu hoặc thư mục dự án chứa nó. Lần đầu cần Internet để npm tải thư viện nếu máy chưa có sẵn. Nút tự khôi phục dữ liệu, cập nhật đường dẫn MySQL và build giao diện khi cần.
+3. Nếu có nhiều địa chỉ IPv4, chọn mạng bệnh viện theo danh sách. Sau khi cửa sổ hiện `LAN web listening`, mở địa chỉ được hiển thị và đăng nhập bằng tài khoản cũ. Các khoa dùng cùng địa chỉ nếu mạng bệnh viện cho phép TCP `3017`.
+4. Những lần sau, bấm đúp nút để chạy với dữ liệu đã có. Giữ cửa sổ mở khi các khoa cần truy cập. Dùng lệnh `stop` ở bước 1 để tắt trước khi sao lưu tiếp.
+
+Báo cáo đã nộp, hình ảnh và tài khoản được khôi phục theo thời điểm sao lưu. Hai máy lưu dữ liệu riêng sau khi chuyển. Nếu thư mục dự án trên máy mới đã chứa một bản `.lan-trial`, hãy giải nén mã nguồn vào một thư mục khác để khôi phục.
+
+### Chạy bằng PowerShell
+
 Mở PowerShell trong thư mục gốc của checkout. Dùng Node.js 24 và gói ZIP MySQL Community 8.4 cho Windows. Trong checkout đã bàn giao, MySQL giải nén tại `.lan-trial/mysql-8.4.13-winx64`. Nếu dựng trên máy khác, tải và giải nén gói MySQL Community trước khi ngắt Internet. [MySQL Community Server cho Windows](https://dev.mysql.com/downloads/mysql/8.4.html?os=3)
 
 ```powershell

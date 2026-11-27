@@ -62,5 +62,6 @@ graphify-out/
 .graphify/
 
 /.lan-trial/
+/.lan-trial-restore-*/
 !/database/schema.sql
 !/lan-trial/*.sql
